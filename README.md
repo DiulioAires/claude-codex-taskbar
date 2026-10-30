@@ -36,7 +36,16 @@ Know, without interrupting your work, whether your PC is under load and how much
 - **Color cues**: progress bars turn yellow near the limit and red when close to it.
 - **Hover** for a tooltip with reset times, last update time, and error details.
 - **Right-click** for a menu: **Settings**, **Refresh now**, **Start with Windows**, **Exit**.
-- **Plays nice with the taskbar**: hides for full-screen apps, follows auto-hide, follows light/dark theme, and is per-monitor DPI aware.
+- **Plays nice with the taskbar** (see below).
+
+### Stays out of your way
+
+- **Full screen:** the strip hides while a full-screen app (a YouTube video, a game, a presentation) is on the taskbar's monitor and comes back as soon as you leave full screen. Full screen on another monitor leaves it alone.
+- **Display scaling:** it follows Windows display scaling (100%, 125%, 150%, …) per monitor, and stays sharp after a change.
+- **Light and dark theme:** text and bar colors follow the Windows theme, switching live.
+- **Taskbar icons:** it never covers the taskbar icons. When apps open and the centered icons shift, the strip shrinks (compact mode, then `…`).
+- **Auto-hide and Explorer restarts:** it hides together with an auto-hidden taskbar and comes back on its own after Explorer restarts.
+- **Sleep:** after resume it fetches fresh limits right away and never shows old numbers as current.
 
 ### Not planned (for v1)
 
