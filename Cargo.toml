@@ -1,0 +1,35 @@
+[package]
+name = "widget-usage-windows"
+version = "0.1.0"
+edition = "2024"
+description = "Lightweight Windows 11 taskbar strip showing hardware usage and Claude Code / Codex subscription limits"
+license = "MIT"
+readme = "README.md"
+publish = false
+
+[lib]
+name = "widget_usage_windows"
+path = "src/lib.rs"
+
+[[bin]]
+name = "widget-usage-windows"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+ureq = { version = "3.5.0", default-features = false, features = ["native-tls", "json"] }
+
+[dependencies.windows]
+version = "0.62.2"
+features = []
+
+[build-dependencies]
+embed-resource = "3.0.12"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
