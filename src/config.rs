@@ -63,7 +63,7 @@ impl Config {
 
     pub fn is_visible(&self, id: &ItemId) -> bool {
         let key = item_key(id);
-        !self.hidden_items.iter().any(|k| *k == key)
+        !self.hidden_items.contains(&key)
     }
 
     pub fn set_visible(&mut self, id: &ItemId, visible: bool) {
