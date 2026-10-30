@@ -58,16 +58,71 @@ pub struct TaskbarInfo {
     pub icons_left: Option<i32>,
 }
 
-/// Free width left of the icons. Without UI Automation, assumes ~300 DIPs of centered icons.
+/// Half-width assumed for the centered icon group when UI Automation is unavailable
+/// (room for ~18 icons), so the strip errs on the side of not covering them.
+const FALLBACK_HALF_ICONS_DIP: i32 = 400;
+
+/// Free width left of the icons, from the Start button or a conservative estimate.
 pub fn available_width(info: &TaskbarInfo, margin: i32) -> i32 {
     if info.left_aligned {
         return 0;
     }
     let free = match info.icons_left {
         Some(icons_left) => icons_left - info.rect.left,
-        None => info.rect.width() / 2 - (300 * info.dpi as i32) / 96,
+        None => info.rect.width() / 2 - (FALLBACK_HALF_ICONS_DIP * info.dpi as i32) / 96,
     };
     (free - 2 * margin).max(0)
+}
+
+/// Caches the UI Automation lookup of where the taskbar icons start.
+///
+/// Successful lookups refresh every [`ICON_PERIOD_TICKS`] ticks or when invalidated (icons
+/// shift as apps open and close). Failed lookups keep the last good value and back off.
+#[derive(Debug, Default)]
+pub struct IconCache {
+    last: Option<i32>,
+    ticks: u32,
+    failures: u32,
+    dirty: bool,
+    tried: bool,
+}
+
+pub const ICON_PERIOD_TICKS: u32 = 5;
+const ICON_MAX_BACKOFF_TICKS: u32 = 30;
+
+impl IconCache {
+    fn period(&self) -> u32 {
+        (ICON_PERIOD_TICKS << self.failures.min(4)).min(ICON_MAX_BACKOFF_TICKS)
+    }
+
+    pub fn needs_lookup(&self) -> bool {
+        !self.tried || (self.dirty && self.failures == 0) || self.ticks >= self.period()
+    }
+
+    pub fn on_lookup(&mut self, result: Option<i32>) {
+        self.tried = true;
+        self.ticks = 0;
+        self.dirty = false;
+        match result {
+            Some(v) => {
+                self.last = Some(v);
+                self.failures = 0;
+            }
+            None => self.failures = self.failures.saturating_add(1),
+        }
+    }
+
+    pub fn tick(&mut self) {
+        self.ticks = self.ticks.saturating_add(1);
+    }
+
+    pub fn invalidate(&mut self) {
+        self.dirty = true;
+    }
+
+    pub fn value(&self) -> Option<i32> {
+        self.last
+    }
 }
 
 /// A non-shell foreground window covering the whole monitor.
@@ -196,7 +251,7 @@ mod tests {
 
     #[test]
     fn available_fallback_estimate() {
-        assert_eq!(available_width(&info(None), 8), 644);
+        assert_eq!(available_width(&info(None), 8), 544);
     }
 
     #[test]
@@ -205,7 +260,7 @@ mod tests {
             dpi: 144,
             ..info(None)
         };
-        assert_eq!(available_width(&i, 8), 960 - 450 - 16);
+        assert_eq!(available_width(&i, 8), 960 - 600 - 16);
     }
 
     #[test]
@@ -284,5 +339,50 @@ mod live {
         let info = super::query(true).expect("taskbar");
         println!("{info:?} available={}", super::available_width(&info, 8));
         assert!(info.rect.width() > 0 && info.dpi >= 96);
+    }
+}
+
+#[cfg(test)]
+mod icon_cache_tests {
+    use super::*;
+
+    #[test]
+    fn first_render_looks_up() {
+        assert!(IconCache::default().needs_lookup());
+    }
+
+    #[test]
+    fn success_is_cached_until_period_or_invalidate() {
+        let mut c = IconCache::default();
+        c.on_lookup(Some(700));
+        assert_eq!(c.value(), Some(700));
+        assert!(!c.needs_lookup());
+        c.invalidate();
+        assert!(c.needs_lookup());
+        c.on_lookup(Some(650));
+        for _ in 0..4 {
+            c.tick();
+        }
+        assert!(!c.needs_lookup());
+        c.tick();
+        assert!(c.needs_lookup());
+    }
+
+    #[test]
+    fn failure_keeps_last_good_value_and_backs_off() {
+        let mut c = IconCache::default();
+        c.on_lookup(Some(700));
+        c.invalidate();
+        c.on_lookup(None);
+        assert_eq!(c.value(), Some(700));
+        // A failed lookup is not retried on every invalidate (e.g. each foreground change).
+        c.invalidate();
+        assert!(!c.needs_lookup());
+        for _ in 0..9 {
+            c.tick();
+        }
+        assert!(!c.needs_lookup());
+        c.tick();
+        assert!(c.needs_lookup());
     }
 }

@@ -202,6 +202,8 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             LRESULT(0)
         }
         WM_APP_REASSERT => {
+            // Foreground changes coincide with apps opening/closing, which shifts the icons.
+            with_app(|app| app.invalidate_icons());
             render(hwnd);
             LRESULT(0)
         }

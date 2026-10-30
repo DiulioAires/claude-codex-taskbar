@@ -3,7 +3,7 @@
 use super::layout::{Layout, layout};
 use super::render::{GAP, Renderer, SEP_W, to_px};
 use super::strip;
-use super::taskbar::{self, TaskbarInfo, available_width, is_fullscreen};
+use super::taskbar::{self, IconCache, TaskbarInfo, available_width, is_fullscreen};
 use super::view::{ItemView, build_items, tooltip_text};
 use crate::config::{self, Config};
 use crate::hw::{HwSnapshot, Sampler};
@@ -30,8 +30,6 @@ use windows::core::HSTRING;
 
 /// Strip offset from the taskbar's left edge, in DIPs.
 const MARGIN_DIP: f32 = 8.0;
-/// Re-run the UI Automation lookup of the taskbar icons every N topmost ticks (2 s each).
-const ICONS_EVERY_TICKS: u32 = 5;
 
 pub struct App {
     pub cfg: Config,
@@ -44,8 +42,7 @@ pub struct App {
     pub control: Arc<Control>,
     renderer: Renderer,
     taskbar: Option<TaskbarInfo>,
-    icons_left: Option<i32>,
-    icon_ticks: u32,
+    icons: IconCache,
     items: Vec<ItemView>,
     layout: Option<Layout>,
     light: bool,
@@ -118,8 +115,7 @@ impl App {
             control,
             renderer: Renderer::new()?,
             taskbar: None,
-            icons_left: None,
-            icon_ticks: 0,
+            icons: IconCache::default(),
             items: Vec::new(),
             layout: None,
             light: light_theme(),
@@ -184,14 +180,13 @@ impl App {
         self.light = light_theme();
     }
 
-    /// Forces the UI Automation icon lookup on the next layout.
+    /// Asks for a fresh UI Automation icon lookup (icons may have moved).
     pub fn invalidate_icons(&mut self) {
-        self.icon_ticks = 0;
-        self.icons_left = None;
+        self.icons.invalidate();
     }
 
     pub fn tick_icons(&mut self) {
-        self.icon_ticks = self.icon_ticks.saturating_add(1);
+        self.icons.tick();
     }
 
     /// Statuses as of now: data older than the refresh cadence allows is not shown as current.
@@ -221,7 +216,7 @@ impl App {
 
     /// Whether the next taskbar query should run the UI Automation icon lookup.
     pub fn needs_icons(&self) -> bool {
-        self.icons_left.is_none() || self.icon_ticks >= ICONS_EVERY_TICKS
+        self.icons.needs_lookup()
     }
 
     /// Recomputes position and layout from a fresh taskbar query, then paints or hides.
@@ -232,10 +227,9 @@ impl App {
             return;
         };
         if looked_up_icons {
-            self.icon_ticks = 0;
-            self.icons_left = info.icons_left;
+            self.icons.on_lookup(info.icons_left);
         }
-        info.icons_left = self.icons_left;
+        info.icons_left = self.icons.value();
         let dpi = info.dpi;
         let (claude, codex) = self.displayed_statuses();
         self.items = build_items(&self.cfg, &self.hw, &claude, &codex, self.lang);
