@@ -21,7 +21,7 @@
 - Intervals: hardware default 1 s (1–5 s), limits default 120 s (min 60 s). Stale window: 15 min.
 - Config at `%APPDATA%\widget-usage-windows\config.json`. Autostart value name `widget-usage-windows` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
 - UI strings in English and pt-BR, picked from the Windows UI language (`GetUserDefaultUILanguage`, primary lang `LANG_PORTUGUESE` → pt-BR, else English). All user-facing text goes through `i18n::t`.
-- Code, comments, commits in English; Conventional Commits; each commit ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Code, comments, commits in English; Conventional Commits; small incremental commits; no AI co-author trailers (the maintainer is the sole author).
 - Every task must pass `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` before its commit.
 
 ## Review Focus
