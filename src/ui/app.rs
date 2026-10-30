@@ -3,7 +3,9 @@
 use super::layout::{Layout, layout};
 use super::render::{GAP, Renderer, SEP_W, to_px};
 use super::strip;
-use super::taskbar::{self, IconCache, TaskbarInfo, available_width, is_fullscreen};
+use super::taskbar::{
+    self, IconCache, TaskbarInfo, available_width, hides_for_fullscreen, is_fullscreen,
+};
 use super::view::{ItemView, build_items, tooltip_text};
 use crate::config::{self, Config};
 use crate::hw::{HwSnapshot, Sampler};
@@ -19,6 +21,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use windows::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::{
+    GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+};
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows::Win32::UI::Shell::{
     QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN, SHQueryUserNotificationState,
@@ -69,29 +74,36 @@ fn light_theme() -> bool {
 }
 
 fn foreground_is_fullscreen(monitor: taskbar::Rect) -> bool {
-    // SAFETY: read-only shell query.
-    if let Ok(state) = unsafe { SHQueryUserNotificationState() }
-        && [
-            QUNS_BUSY,
-            QUNS_RUNNING_D3D_FULL_SCREEN,
-            QUNS_PRESENTATION_MODE,
-        ]
-        .contains(&state)
-    {
-        return true;
-    }
-    // SAFETY: plain window queries; failures fall through to "not fullscreen".
+    // SAFETY: read-only shell and window queries; failures mean "not fullscreen".
     unsafe {
+        let shell_busy = SHQueryUserNotificationState().is_ok_and(|state| {
+            [
+                QUNS_BUSY,
+                QUNS_RUNNING_D3D_FULL_SCREEN,
+                QUNS_PRESENTATION_MODE,
+            ]
+            .contains(&state)
+        });
         let fg = GetForegroundWindow();
         if fg.is_invalid() {
             return false;
         }
+        let mut mi = MONITORINFO {
+            cbSize: size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if !GetMonitorInfoW(MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST), &mut mi).as_bool() {
+            return false;
+        }
+        let fg_monitor = taskbar::Rect::from(mi.rcMonitor);
         let mut class = [0u16; 64];
         let n = GetClassNameW(fg, &mut class) as usize;
         let class = String::from_utf16_lossy(&class[..n]);
         let is_shell = matches!(class.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd");
         let mut r = RECT::default();
-        GetWindowRect(fg, &mut r).is_ok() && is_fullscreen(r.into(), monitor, is_shell)
+        let covers =
+            GetWindowRect(fg, &mut r).is_ok() && is_fullscreen(r.into(), monitor, is_shell);
+        hides_for_fullscreen(shell_busy && !is_shell, covers, fg_monitor, monitor)
     }
 }
 

@@ -125,6 +125,17 @@ impl IconCache {
     }
 }
 
+/// Hide only for fullscreen on the taskbar's own monitor: the shell's "busy" state is
+/// system-wide, so it is trusted only when the foreground window is on that monitor.
+pub fn hides_for_fullscreen(
+    shell_busy: bool,
+    fg_covers_monitor: bool,
+    fg_monitor: Rect,
+    taskbar_monitor: Rect,
+) -> bool {
+    fg_monitor == taskbar_monitor && (shell_busy || fg_covers_monitor)
+}
+
 /// A non-shell foreground window covering the whole monitor.
 pub fn is_fullscreen(fg: Rect, monitor: Rect, fg_is_shell: bool) -> bool {
     !fg_is_shell
@@ -384,5 +395,43 @@ mod icon_cache_tests {
         assert!(!c.needs_lookup());
         c.tick();
         assert!(c.needs_lookup());
+    }
+}
+
+#[cfg(test)]
+mod fullscreen_monitor_tests {
+    use super::*;
+
+    const PRIMARY: Rect = Rect {
+        left: 0,
+        top: 0,
+        right: 1920,
+        bottom: 1080,
+    };
+    const SECOND: Rect = Rect {
+        left: 1920,
+        top: 0,
+        right: 4480,
+        bottom: 1440,
+    };
+
+    #[test]
+    fn fullscreen_on_other_monitor_keeps_strip() {
+        assert!(!hides_for_fullscreen(true, true, SECOND, PRIMARY));
+    }
+
+    #[test]
+    fn shell_busy_on_taskbar_monitor_hides() {
+        assert!(hides_for_fullscreen(true, false, PRIMARY, PRIMARY));
+    }
+
+    #[test]
+    fn covering_window_on_taskbar_monitor_hides() {
+        assert!(hides_for_fullscreen(false, true, PRIMARY, PRIMARY));
+    }
+
+    #[test]
+    fn nothing_fullscreen_keeps_strip() {
+        assert!(!hides_for_fullscreen(false, false, PRIMARY, PRIMARY));
     }
 }
