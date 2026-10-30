@@ -27,7 +27,8 @@ jobs:
           Compress-Archive -Path "$name/*" -DestinationPath "dist/$name.zip"
           Get-ChildItem dist -File | ForEach-Object {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
-            "$hash  $($_.Name)" | Out-File -Encoding ascii -Append dist/SHA256SUMS.txt
+            # LF line endings so `sha256sum -c SHA256SUMS.txt` works everywhere.
+            [IO.File]::AppendAllText("$PWD/dist/SHA256SUMS.txt", "$hash  $($_.Name)`n")
           }
           Get-Content dist/SHA256SUMS.txt
       - name: Publish
