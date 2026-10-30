@@ -1,0 +1,186 @@
+//! User-facing strings in English and Brazilian Portuguese.
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Lang {
+    En,
+    PtBr,
+}
+
+/// Any Portuguese UI language maps to pt-BR; everything else falls back to English.
+pub fn lang_from_langid(langid: u16) -> Lang {
+    const LANG_PORTUGUESE: u16 = 0x16;
+    if langid & 0x3ff == LANG_PORTUGUESE {
+        Lang::PtBr
+    } else {
+        Lang::En
+    }
+}
+
+pub fn detect_lang() -> Lang {
+    // SAFETY: no arguments, no preconditions.
+    let langid = unsafe { windows::Win32::Globalization::GetUserDefaultUILanguage() };
+    lang_from_langid(langid)
+}
+
+/// Replaces the first `{}` in a template string.
+pub fn fmt(template: &str, value: &str) -> String {
+    template.replacen("{}", value, 1)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Key {
+    MenuSettings,
+    MenuRefresh,
+    MenuAutostart,
+    MenuExit,
+    LabelWeek,
+    ClaudeExpired,
+    ClaudeNoLogin,
+    CodexExpired,
+    CodexNoLogin,
+    NoSubscription,
+    StaleFmt,
+    SessionDataFmt,
+    ResetsFmt,
+    UpdatedFmt,
+    NoRecentData,
+    Loading,
+    ErrorFmt,
+    HintCenterTaskbar,
+    HintWidgetsButton,
+    HiddenItems,
+    LoginFound,
+    SettingsTitle,
+    SettingsProviders,
+    SettingsItems,
+    SettingsHwInterval,
+    SettingsLimitsInterval,
+    SettingsWeekSuffix,
+    Ok,
+    Cancel,
+}
+
+impl Key {
+    pub const ALL: &'static [Key] = &[
+        Key::MenuSettings,
+        Key::MenuRefresh,
+        Key::MenuAutostart,
+        Key::MenuExit,
+        Key::LabelWeek,
+        Key::ClaudeExpired,
+        Key::ClaudeNoLogin,
+        Key::CodexExpired,
+        Key::CodexNoLogin,
+        Key::NoSubscription,
+        Key::StaleFmt,
+        Key::SessionDataFmt,
+        Key::ResetsFmt,
+        Key::UpdatedFmt,
+        Key::NoRecentData,
+        Key::Loading,
+        Key::ErrorFmt,
+        Key::HintCenterTaskbar,
+        Key::HintWidgetsButton,
+        Key::HiddenItems,
+        Key::LoginFound,
+        Key::SettingsTitle,
+        Key::SettingsProviders,
+        Key::SettingsItems,
+        Key::SettingsHwInterval,
+        Key::SettingsLimitsInterval,
+        Key::SettingsWeekSuffix,
+        Key::Ok,
+        Key::Cancel,
+    ];
+}
+
+pub fn t(lang: Lang, key: Key) -> &'static str {
+    let (en, pt) = match key {
+        Key::MenuSettings => ("Settings", "Configurações"),
+        Key::MenuRefresh => ("Refresh now", "Atualizar agora"),
+        Key::MenuAutostart => ("Start with Windows", "Iniciar com o Windows"),
+        Key::MenuExit => ("Exit", "Sair"),
+        Key::LabelWeek => ("wk", "sem"),
+        Key::ClaudeExpired => (
+            "Claude login expired — open Claude Code to renew",
+            "Login do Claude expirado — abra o Claude Code para renovar",
+        ),
+        Key::ClaudeNoLogin => ("Log in by running `claude`", "Faça login rodando `claude`"),
+        Key::CodexExpired => (
+            "Codex login expired — run `codex login`",
+            "Login do Codex expirado — rode `codex login`",
+        ),
+        Key::CodexNoLogin => (
+            "Log in by running `codex login`",
+            "Faça login rodando `codex login`",
+        ),
+        Key::NoSubscription => (
+            "No subscription limits (API key login)",
+            "Sem limites de assinatura (login por API key)",
+        ),
+        Key::StaleFmt => (
+            "Update failed; last data at {}",
+            "Falha ao atualizar; último dado às {}",
+        ),
+        Key::SessionDataFmt => ("Data from {} (last session)", "Dado de {} (última sessão)"),
+        Key::ResetsFmt => ("resets at {}", "reseta às {}"),
+        Key::UpdatedFmt => ("updated at {}", "atualizado às {}"),
+        Key::NoRecentData => ("No recent data", "Sem dado recente"),
+        Key::Loading => ("Loading…", "Carregando…"),
+        Key::ErrorFmt => ("Error: {}", "Erro: {}"),
+        Key::HintCenterTaskbar => (
+            "Center the taskbar icons for the strip to fit (Settings → Personalization → Taskbar → Taskbar behaviors)",
+            "Centralize os ícones da barra para a faixa caber (Configurações → Personalização → Barra de tarefas → Comportamentos)",
+        ),
+        Key::HintWidgetsButton => (
+            "Turn off the Windows Widgets button to free this corner (Settings → Personalization → Taskbar → Widgets)",
+            "Desative o botão de Widgets do Windows para liberar este canto (Configurações → Personalização → Barra de tarefas → Widgets)",
+        ),
+        Key::HiddenItems => ("Not shown (no room):", "Não exibidos (sem espaço):"),
+        Key::LoginFound => ("login found", "login encontrado"),
+        Key::SettingsTitle => ("Taskbar Usage — Settings", "Taskbar Usage — Configurações"),
+        Key::SettingsProviders => ("Subscriptions", "Assinaturas"),
+        Key::SettingsItems => ("Items on the strip", "Itens na faixa"),
+        Key::SettingsHwInterval => (
+            "Hardware refresh (1–5 s)",
+            "Atualização do hardware (1–5 s)",
+        ),
+        Key::SettingsLimitsInterval => (
+            "Limits refresh (≥ 60 s)",
+            "Atualização dos limites (≥ 60 s)",
+        ),
+        Key::SettingsWeekSuffix => ("weekly", "semanal"),
+        Key::Ok => ("OK", "OK"),
+        Key::Cancel => ("Cancel", "Cancelar"),
+    };
+    match lang {
+        Lang::En => en,
+        Lang::PtBr => pt,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_key_has_both_languages() {
+        for key in Key::ALL {
+            assert!(!t(Lang::En, *key).is_empty(), "{key:?} en");
+            assert!(!t(Lang::PtBr, *key).is_empty(), "{key:?} pt");
+        }
+    }
+
+    #[test]
+    fn langid_maps_portuguese_to_pt_br() {
+        assert_eq!(lang_from_langid(0x0416), Lang::PtBr); // pt-BR
+        assert_eq!(lang_from_langid(0x0816), Lang::PtBr); // pt-PT
+        assert_eq!(lang_from_langid(0x0409), Lang::En);
+        assert_eq!(lang_from_langid(0x0407), Lang::En); // de-DE falls back to English
+    }
+
+    #[test]
+    fn fmt_substitutes_placeholder() {
+        assert_eq!(fmt(t(Lang::En, Key::ResetsFmt), "15:00"), "resets at 15:00");
+    }
+}
