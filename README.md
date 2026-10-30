@@ -19,7 +19,7 @@ No panel to open, no window to switch to. Just glance at the taskbar.
 
 ## Status
 
-**Early development (v0.1).** The strip, the hardware and limit readings, the tooltip, the menu, and the settings window work. Expect rough edges; bug reports are very welcome.
+**Early development (v0.2).** The strip, the hardware and limit readings, the tooltip, the menu, and the settings window work on Windows 11 and Windows 10. Expect rough edges; bug reports are very welcome.
 
 ## Why
 

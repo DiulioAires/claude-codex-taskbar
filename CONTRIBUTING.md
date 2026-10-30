@@ -6,7 +6,7 @@ By participating, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Project status
 
-The project is in **early development (v0.1)**: the app works, and the most valuable contributions right now are bug reports from different setups (monitors, DPI, taskbar settings), feedback on the experimental *Keep login active* option, and well-described ideas. Please discuss larger changes in an issue first.
+The project is in **early development (v0.2)**: the app works, and the most valuable contributions right now are bug reports from different setups (monitors, DPI, taskbar settings), feedback on the experimental *Keep login active* option, and well-described ideas. Please discuss larger changes in an issue first.
 
 ## Ways to contribute
 
