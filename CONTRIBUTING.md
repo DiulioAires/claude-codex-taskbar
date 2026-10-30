@@ -6,7 +6,7 @@ By participating, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Project status
 
-The project is in its **design phase**. The design document lives in [`docs/superpowers/specs/`](docs/superpowers/specs/) (currently in Portuguese; questions about it in English are welcome). Product code will land once the implementation plan is ready, so the most valuable contributions right now are design feedback and well-described ideas.
+The project is in **early development (v0.1)**: the app works, and the most valuable contributions right now are bug reports from different setups (monitors, DPI, taskbar settings), feedback on the experimental *Keep login active* option, and well-described ideas. Please discuss larger changes in an issue first.
 
 ## Ways to contribute
 

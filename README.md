@@ -13,7 +13,7 @@ No panel to open, no window to switch to. Just glance at the taskbar.
 
 ## Status
 
-**Early development (v0.1).** The strip, the hardware and limit readings, the tooltip, the menu, and the settings window work. Expect rough edges; bug reports are very welcome. The design (written in Portuguese) lives in [`docs/superpowers/specs/`](docs/superpowers/specs/).
+**Early development (v0.1).** The strip, the hardware and limit readings, the tooltip, the menu, and the settings window work. Expect rough edges; bug reports are very welcome.
 
 ## Why
 
