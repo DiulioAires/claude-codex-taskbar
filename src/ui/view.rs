@@ -112,6 +112,9 @@ fn error_message(lang: Lang, kind: Kind, err: &FetchError) -> String {
         (Kind::Claude, FetchError::NoLogin) => Key::ClaudeNoLogin,
         (_, FetchError::NoLogin) => Key::CodexNoLogin,
         (_, FetchError::NoSubscription) => Key::NoSubscription,
+        (_, FetchError::Network(msg) | FetchError::BadResponse(msg)) if msg.is_empty() => {
+            Key::NoRecentData
+        }
         (_, FetchError::Network(msg) | FetchError::BadResponse(msg)) => {
             return format!("{} ({msg})", t(lang, Key::NoRecentData));
         }
@@ -371,5 +374,25 @@ mod tests {
         assert!(tip.contains("Claude"));
         assert!(tip.contains("5h: 62%"));
         assert!(tip.contains("wk: 34%"));
+    }
+}
+
+#[cfg(test)]
+mod aging_view_tests {
+    use super::*;
+    use crate::limits::{FetchError, ProviderStatus};
+
+    #[test]
+    fn outdated_data_message_has_no_empty_parens() {
+        let tip = tooltip_text(
+            Lang::En,
+            &ProviderStatus::Failed(FetchError::Network(String::new())),
+            &ProviderStatus::Disabled,
+            &[],
+            false,
+            false,
+        );
+        assert!(tip.contains("No recent data"));
+        assert!(!tip.contains("()"));
     }
 }

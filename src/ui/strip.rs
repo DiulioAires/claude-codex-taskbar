@@ -17,12 +17,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CW_USEDEFAULT, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu,
     DestroyWindow, DispatchMessageW, EVENT_SYSTEM_FOREGROUND, GetCursorPos, GetMessageW,
     HWND_TOPMOST, IDC_ARROW, KillTimer, LoadCursorW, MF_CHECKED, MF_SEPARATOR, MF_STRING, MSG,
-    PostMessageW, PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SW_HIDE,
-    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SendMessageW, SetForegroundWindow,
-    SetTimer, SetWindowPos, ShowWindow, TPM_BOTTOMALIGN, TPM_RETURNCMD, TPM_RIGHTBUTTON,
-    TrackPopupMenu, TranslateMessage, WINEVENT_OUTOFCONTEXT, WM_APP, WM_DESTROY, WM_DISPLAYCHANGE,
-    WM_DPICHANGED, WM_NOTIFY, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    PBT_APMRESUMEAUTOMATIC, PostMessageW, PostQuitMessage, RegisterClassExW,
+    RegisterWindowMessageW, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SendMessageW, SetForegroundWindow, SetTimer, SetWindowPos, ShowWindow, TPM_BOTTOMALIGN,
+    TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WINEVENT_OUTOFCONTEXT,
+    WM_APP, WM_DESTROY, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_NOTIFY, WM_POWERBROADCAST,
+    WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 use windows::core::{PCWSTR, PWSTR, w};
 
@@ -211,6 +212,12 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             });
             render(hwnd);
             LRESULT(0)
+        }
+        WM_POWERBROADCAST if wparam.0 == PBT_APMRESUMEAUTOMATIC as usize => {
+            // After sleep the cached limits are old: fetch right away.
+            with_app(|app| app.control.wake());
+            render(hwnd);
+            LRESULT(1)
         }
         WM_RBUTTONUP => {
             show_menu(hwnd);

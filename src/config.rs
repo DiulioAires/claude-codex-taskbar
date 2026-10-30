@@ -57,7 +57,7 @@ impl Config {
 
     pub fn clamped(mut self) -> Config {
         self.hw_interval_secs = self.hw_interval_secs.clamp(1, 5);
-        self.limits_interval_secs = self.limits_interval_secs.max(60);
+        self.limits_interval_secs = self.limits_interval_secs.clamp(60, 3600);
         self
     }
 
@@ -160,6 +160,7 @@ mod tests {
         assert_eq!(c(9, 120).hw_interval_secs, 5);
         assert_eq!(c(1, 10).limits_interval_secs, 60);
         assert_eq!(c(3, 600).limits_interval_secs, 600);
+        assert_eq!(c(3, 99_999).limits_interval_secs, 3600);
     }
 
     #[test]

@@ -10,7 +10,7 @@ use crate::hw::{HwSnapshot, Sampler};
 use crate::i18n::{Lang, detect_lang};
 use crate::limits::claude::ClaudeProvider;
 use crate::limits::codex::CodexProvider;
-use crate::limits::state::next_status;
+use crate::limits::state::{STALE_SECS, age_status, next_status};
 use crate::limits::worker::{Control, Fetcher, LimitResult, spawn_with};
 use crate::limits::{Provider, ProviderStatus};
 use crate::model::Kind;
@@ -191,6 +191,16 @@ impl App {
         self.icon_ticks = self.icon_ticks.saturating_add(1);
     }
 
+    /// Statuses as of now: data older than the refresh cadence allows is not shown as current.
+    fn displayed_statuses(&self) -> (ProviderStatus, ProviderStatus) {
+        let now = now_unix();
+        let max_age = STALE_SECS.max(2 * i64::from(self.cfg.limits_interval_secs));
+        (
+            age_status(&self.claude, now, max_age),
+            age_status(&self.codex, now, max_age),
+        )
+    }
+
     /// Recomputes position and layout, then paints or hides the strip.
     pub fn render(&mut self, hwnd: HWND) {
         let need_icons = self.icons_left.is_none() || self.icon_ticks >= ICONS_EVERY_TICKS;
@@ -204,7 +214,8 @@ impl App {
         }
         info.icons_left = self.icons_left;
         let dpi = info.dpi;
-        self.items = build_items(&self.cfg, &self.hw, &self.claude, &self.codex, self.lang);
+        let (claude, codex) = self.displayed_statuses();
+        self.items = build_items(&self.cfg, &self.hw, &claude, &codex, self.lang);
         let metrics = self.renderer.measure(&self.items, dpi);
         let margin = to_px(MARGIN_DIP, dpi);
         let kinds: Vec<_> = self
@@ -250,7 +261,8 @@ impl App {
             .taskbar
             .as_ref()
             .map_or((false, false), |t| (t.left_aligned, t.widgets_button_on));
-        let text = tooltip_text(self.lang, &self.claude, &self.codex, &hidden, left, widgets);
+        let (claude, codex) = self.displayed_statuses();
+        let text = tooltip_text(self.lang, &claude, &codex, &hidden, left, widgets);
         if text.is_empty() {
             "Taskbar Usage".into()
         } else {

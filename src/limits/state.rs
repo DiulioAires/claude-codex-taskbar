@@ -29,6 +29,40 @@ pub fn next_status(
     ProviderStatus::Failed(err)
 }
 
+/// Display-time view of a status at `now`: fetched data older than `max_age` (e.g. after
+/// sleep) becomes "no recent data", and windows whose reset time has passed are dropped.
+pub fn age_status(status: &ProviderStatus, now: i64, max_age: i64) -> ProviderStatus {
+    let drop_reset = |usage: &ProviderUsage| {
+        let keep = |w: &Option<super::WindowUsage>| {
+            w.clone()
+                .filter(|w| w.resets_at.is_none_or(|reset| reset > now))
+        };
+        ProviderUsage {
+            five_hour: keep(&usage.five_hour),
+            weekly: keep(&usage.weekly),
+        }
+    };
+    match status {
+        ProviderStatus::Ok { at, .. } | ProviderStatus::Stale { at, .. } if now - at > max_age => {
+            ProviderStatus::Failed(FetchError::Network(String::new()))
+        }
+        ProviderStatus::Ok { usage, at } => ProviderStatus::Ok {
+            usage: drop_reset(usage),
+            at: *at,
+        },
+        ProviderStatus::Stale { usage, at, err } => ProviderStatus::Stale {
+            usage: drop_reset(usage),
+            at: *at,
+            err: err.clone(),
+        },
+        ProviderStatus::FromSession { usage, at } => ProviderStatus::FromSession {
+            usage: drop_reset(usage),
+            at: *at,
+        },
+        other => other.clone(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,5 +153,85 @@ mod tests {
         };
         let s = next_status(&prev, Err(FetchError::Expired), 1001);
         assert_eq!(s, ProviderStatus::Failed(FetchError::Expired));
+    }
+}
+
+#[cfg(test)]
+mod aging_tests {
+    use super::*;
+    use crate::limits::{FetchError, ProviderStatus, ProviderUsage, WindowUsage};
+
+    fn usage(reset5: i64, resetw: i64) -> ProviderUsage {
+        ProviderUsage {
+            five_hour: Some(WindowUsage {
+                used_pct: 92.0,
+                resets_at: Some(reset5),
+            }),
+            weekly: Some(WindowUsage {
+                used_pct: 30.0,
+                resets_at: Some(resetw),
+            }),
+        }
+    }
+
+    #[test]
+    fn fresh_ok_is_unchanged() {
+        let s = ProviderStatus::Ok {
+            usage: usage(10_000, 90_000),
+            at: 1000,
+        };
+        assert_eq!(age_status(&s, 1500, 900), s);
+    }
+
+    #[test]
+    fn ok_older_than_max_age_has_no_data() {
+        // Laptop slept for hours: the old value must not be shown as current.
+        let s = ProviderStatus::Ok {
+            usage: usage(100_000, 900_000),
+            at: 1000,
+        };
+        assert!(matches!(
+            age_status(&s, 1000 + 901, 900),
+            ProviderStatus::Failed(FetchError::Network(_))
+        ));
+    }
+
+    #[test]
+    fn stale_older_than_max_age_has_no_data() {
+        let s = ProviderStatus::Stale {
+            usage: usage(100_000, 900_000),
+            at: 1000,
+            err: FetchError::Network("x".into()),
+        };
+        assert!(matches!(
+            age_status(&s, 5000, 900),
+            ProviderStatus::Failed(_)
+        ));
+    }
+
+    #[test]
+    fn window_past_reset_is_dropped() {
+        let s = ProviderStatus::Ok {
+            usage: usage(1200, 90_000),
+            at: 1000,
+        };
+        let ProviderStatus::Ok { usage: u, .. } = age_status(&s, 1300, 900) else {
+            panic!()
+        };
+        assert_eq!(u.five_hour, None);
+        assert!(u.weekly.is_some());
+    }
+
+    #[test]
+    fn session_data_keeps_age_but_drops_reset_windows() {
+        let s = ProviderStatus::FromSession {
+            usage: usage(1200, 90_000),
+            at: 10,
+        };
+        let ProviderStatus::FromSession { usage: u, .. } = age_status(&s, 1300, 900) else {
+            panic!()
+        };
+        assert_eq!(u.five_hour, None);
+        assert!(u.weekly.is_some());
     }
 }

@@ -146,8 +146,8 @@ pub fn t(lang: Lang, key: Key) -> &'static str {
             "Atualização do hardware (1–5 s)",
         ),
         Key::SettingsLimitsInterval => (
-            "Limits refresh (≥ 60 s)",
-            "Atualização dos limites (≥ 60 s)",
+            "Limits refresh (60–3600 s)",
+            "Atualização dos limites (60–3600 s)",
         ),
         Key::SettingsWeekSuffix => ("weekly", "semanal"),
         Key::Ok => ("OK", "OK"),
