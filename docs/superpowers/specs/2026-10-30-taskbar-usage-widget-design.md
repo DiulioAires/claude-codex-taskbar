@@ -86,7 +86,7 @@ O porquê: saber, sem interromper o trabalho, se o PC está sobrecarregado e qua
 - Credenciais: `%USERPROFILE%\.claude\.credentials.json` → `claudeAiOauth.accessToken` e `expiresAt`.
 - Consulta (endpoint **não oficial**, o mesmo usado pelo `/usage` do Claude Code): `GET https://api.anthropic.com/api/oauth/usage` com `Authorization: Bearer <token>` e `anthropic-beta: oauth-2025-04-20`. Resposta esperada: `five_hour.utilization`, `five_hour.resets_at`, `seven_day.utilization` e `seven_day.resets_at`. **O builder deve verificar o formato real** com uma chamada antes de implementar.
 - Frequência: a cada **2 minutos** (configurável), mais "Atualizar agora".
-- Token com `expiresAt` no passado ou resposta 401: mostrar o estado **"expirado"**, com a barra cinza e o valor `—`. O tooltip diz "Login do Claude expirado — abra o Claude Code para renovar". Não tentar renovar.
+- Token com `expiresAt` no passado ou resposta 401: mostrar o estado **"expirado"**, com a barra cinza e o valor `—`. O tooltip diz "Login do Claude expirado — abra o Claude Code para renovar". Não tentar renovar. **Decisão do usuário**: aceitar esse estado (o token vale ~8 h desde a última renovação feita pelo Claude Code) em vez de renovar e gravar o arquivo de credenciais, para nunca deslogar a CLI.
 - Arquivo ausente: estado **"sem login"**, com o tooltip "Faça login rodando `claude`".
 
 ### 6.3 Codex: limites
