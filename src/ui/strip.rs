@@ -2,7 +2,6 @@
 
 use super::app::{App, spawn_worker};
 use crate::i18n::{Key, t};
-use crate::limits::worker::LimitResult;
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicIsize, Ordering};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
@@ -91,7 +90,11 @@ fn reassert_topmost(hwnd: HWND) {
 }
 
 fn render(hwnd: HWND) {
-    with_app(|app| app.render(hwnd));
+    let Some(need_icons) = with_app(|app| app.needs_icons()) else {
+        return;
+    };
+    let info = super::taskbar::query(need_icons);
+    with_app(|app| app.render(hwnd, info, need_icons));
 }
 
 fn set_hw_timer(hwnd: HWND, secs: u32) {
@@ -176,7 +179,11 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
         WM_TIMER => {
             match wparam.0 {
                 TIMER_HW => {
-                    with_app(|app| app.sample_hw());
+                    with_app(|app| {
+                        app.sample_hw();
+                        // Picks up results whose notification arrived while the app was busy.
+                        app.drain_limits();
+                    });
                 }
                 TIMER_TOPMOST => {
                     with_app(|app| app.tick_icons());
@@ -190,9 +197,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             LRESULT(0)
         }
         WM_APP_LIMITS => {
-            // SAFETY: the worker boxed this LimitResult and gave up ownership when posting.
-            let result = unsafe { Box::from_raw(lparam.0 as *mut LimitResult) };
-            with_app(|app| app.on_limits(*result));
+            with_app(|app| app.drain_limits());
             render(hwnd);
             LRESULT(0)
         }
@@ -393,7 +398,8 @@ pub fn run(app: App) -> i32 {
             0,
             WINEVENT_OUTOFCONTEXT,
         );
-        spawn_worker(hwnd, control);
+        let inbox = spawn_worker(hwnd, control);
+        with_app(|app| app.set_inbox(inbox));
         render(hwnd);
 
         let mut msg = MSG::default();

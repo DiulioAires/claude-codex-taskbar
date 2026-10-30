@@ -4,6 +4,7 @@ use super::{FetchError, ProviderUsage};
 use crate::model::Kind;
 use crate::timeutil::now_unix;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::mpsc::{Receiver, channel};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -104,6 +105,22 @@ pub fn spawn_with(
     })
 }
 
+/// Like [`spawn_with`], but results wait in a queue the UI drains when it can; `notify`
+/// only signals that something arrived, so no data travels inside window messages.
+pub fn spawn_queued(
+    control: Arc<Control>,
+    fetchers: Vec<(Kind, Fetcher)>,
+    notify: impl Fn() + Send + 'static,
+) -> (JoinHandle<()>, Receiver<LimitResult>) {
+    let (tx, rx) = channel();
+    let handle = spawn_with(control, fetchers, move |result| {
+        if tx.send(result).is_ok() {
+            notify();
+        }
+    });
+    (handle, rx)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,6 +184,54 @@ mod tests {
         let r = rx.recv_timeout(Duration::from_secs(2)).unwrap();
         assert_eq!(r.kind, Kind::Claude);
         assert!(rx.recv_timeout(Duration::from_millis(200)).is_err());
+        control.stop();
+        handle.join().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod queue_tests {
+    use super::*;
+    use crate::limits::{ProviderUsage, WindowUsage};
+    use std::sync::atomic::AtomicUsize;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn results_queue_until_drained() {
+        let control = Control::new(3600);
+        control.set_enabled(Kind::Claude, true);
+        control.set_enabled(Kind::Codex, true);
+        let ok = |pct: f32| -> Fetcher {
+            Box::new(move |now| {
+                Ok((
+                    ProviderUsage {
+                        five_hour: Some(WindowUsage {
+                            used_pct: pct,
+                            resets_at: None,
+                        }),
+                        weekly: None,
+                    },
+                    false,
+                    now,
+                ))
+            })
+        };
+        let notified = Arc::new(AtomicUsize::new(0));
+        let n = notified.clone();
+        let (handle, inbox) = spawn_queued(
+            control.clone(),
+            vec![(Kind::Claude, ok(1.0)), (Kind::Codex, ok(2.0))],
+            move || {
+                n.fetch_add(1, Ordering::SeqCst);
+            },
+        );
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while notified.load(Ordering::SeqCst) < 2 && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        // Nothing was consumed while "busy"; both results are still waiting.
+        let kinds: Vec<Kind> = inbox.try_iter().map(|r| r.kind).collect();
+        assert_eq!(kinds, [Kind::Claude, Kind::Codex]);
         control.stop();
         handle.join().unwrap();
     }

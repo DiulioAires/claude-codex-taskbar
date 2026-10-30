@@ -11,12 +11,13 @@ use crate::i18n::{Lang, detect_lang};
 use crate::limits::claude::ClaudeProvider;
 use crate::limits::codex::CodexProvider;
 use crate::limits::state::{STALE_SECS, age_status, next_status};
-use crate::limits::worker::{Control, Fetcher, LimitResult, spawn_with};
+use crate::limits::worker::{Control, Fetcher, LimitResult, spawn_queued};
 use crate::limits::{Provider, ProviderStatus};
 use crate::model::Kind;
 use crate::timeutil::now_unix;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::mpsc::Receiver;
 use windows::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows::Win32::UI::Shell::{
@@ -49,6 +50,7 @@ pub struct App {
     layout: Option<Layout>,
     light: bool,
     pub shown: bool,
+    inbox: Option<Receiver<LimitResult>>,
 }
 
 fn light_theme() -> bool {
@@ -122,6 +124,7 @@ impl App {
             layout: None,
             light: light_theme(),
             shown: false,
+            inbox: None,
             cfg,
             cfg_path,
         };
@@ -201,14 +204,34 @@ impl App {
         )
     }
 
-    /// Recomputes position and layout, then paints or hides the strip.
-    pub fn render(&mut self, hwnd: HWND) {
-        let need_icons = self.icons_left.is_none() || self.icon_ticks >= ICONS_EVERY_TICKS;
-        let Some(mut info) = taskbar::query(need_icons) else {
+    pub fn set_inbox(&mut self, inbox: Receiver<LimitResult>) {
+        self.inbox = Some(inbox);
+    }
+
+    /// Applies every limit result the worker has queued.
+    pub fn drain_limits(&mut self) {
+        let results: Vec<LimitResult> = match &self.inbox {
+            Some(inbox) => inbox.try_iter().collect(),
+            None => return,
+        };
+        for result in results {
+            self.on_limits(result);
+        }
+    }
+
+    /// Whether the next taskbar query should run the UI Automation icon lookup.
+    pub fn needs_icons(&self) -> bool {
+        self.icons_left.is_none() || self.icon_ticks >= ICONS_EVERY_TICKS
+    }
+
+    /// Recomputes position and layout from a fresh taskbar query, then paints or hides.
+    /// The query runs outside the `App` borrow because UI Automation can pump messages.
+    pub fn render(&mut self, hwnd: HWND, info: Option<TaskbarInfo>, looked_up_icons: bool) {
+        let Some(mut info) = info else {
             strip::hide(hwnd, self);
             return;
         };
-        if need_icons {
+        if looked_up_icons {
             self.icon_ticks = 0;
             self.icons_left = info.icons_left;
         }
@@ -283,8 +306,9 @@ pub(crate) fn codex_provider() -> CodexProvider {
     }
 }
 
-/// Starts the limits thread; results are boxed and posted to `hwnd` as `WM_APP_LIMITS`.
-pub fn spawn_worker(hwnd: HWND, control: Arc<Control>) {
+/// Starts the limits thread; results queue in the returned inbox and `WM_APP_LIMITS`
+/// (carrying no data) tells the window to drain it.
+pub fn spawn_worker(hwnd: HWND, control: Arc<Control>) -> Receiver<LimitResult> {
     let claude = claude_provider();
     let codex = codex_provider();
     let fetchers: Vec<(Kind, Fetcher)> = vec![
@@ -298,22 +322,18 @@ pub fn spawn_worker(hwnd: HWND, control: Arc<Control>) {
         ),
     ];
     let target = hwnd.0 as isize;
-    spawn_with(control, fetchers, move |result| {
-        let ptr = Box::into_raw(Box::new(result));
-        // SAFETY: the UI thread reclaims the box in its WM_APP_LIMITS handler.
-        let posted = unsafe {
-            PostMessageW(
+    let (_handle, inbox) = spawn_queued(control, fetchers, move || {
+        // SAFETY: posting a data-free notification to our own window; failure is harmless.
+        unsafe {
+            let _ = PostMessageW(
                 Some(HWND(target as _)),
                 strip::WM_APP_LIMITS,
                 WPARAM(0),
-                LPARAM(ptr as isize),
-            )
-        };
-        if posted.is_err() {
-            // SAFETY: the message was not queued, so ownership never left this thread.
-            drop(unsafe { Box::from_raw(ptr) });
+                LPARAM(0),
+            );
         }
     });
+    inbox
 }
 
 pub fn run() -> i32 {
