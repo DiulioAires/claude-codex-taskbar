@@ -1,8 +1,8 @@
-# widget-usage-windows: Claude Code & Codex usage limits on the Windows 11 taskbar
+# claude-codex-taskbar: Claude Code & Codex usage limits on the Windows 11 taskbar
 
-[![CI](https://github.com/chiarorosa/widget-usage-windows/actions/workflows/ci.yml/badge.svg)](https://github.com/chiarorosa/widget-usage-windows/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/chiarorosa/widget-usage-windows)](https://github.com/chiarorosa/widget-usage-windows/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/chiarorosa/widget-usage-windows/total)](https://github.com/chiarorosa/widget-usage-windows/releases)
+[![CI](https://github.com/chiarorosa/claude-codex-taskbar/actions/workflows/ci.yml/badge.svg)](https://github.com/chiarorosa/claude-codex-taskbar/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/chiarorosa/claude-codex-taskbar)](https://github.com/chiarorosa/claude-codex-taskbar/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/chiarorosa/claude-codex-taskbar/total)](https://github.com/chiarorosa/claude-codex-taskbar/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Windows 11](https://img.shields.io/badge/Windows-11-0078D4?logo=windows11)
 
@@ -135,7 +135,7 @@ About 10–20 MB of private memory and near-zero CPU: hardware is sampled once p
 
 | Tool | Platform | What it shows |
 |---|---|---|
-| **widget-usage-windows** (this) | Windows 11 taskbar | Claude Code + Codex 5-hour/weekly limits, CPU/RAM/GPU/disk |
+| **claude-codex-taskbar** (this) | Windows 11 taskbar | Claude Code + Codex 5-hour/weekly limits, CPU/RAM/GPU/disk |
 | [ccusage](https://github.com/ryoppippi/ccusage) | CLI | Claude Code token/cost reports from local logs |
 | [Claude-Code-Usage-Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) | Terminal | Real-time Claude Code token usage and predictions |
 | [ccseva](https://github.com/Iamshankhadeep/ccseva) | macOS menu bar | Claude Code usage tracking |
