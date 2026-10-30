@@ -1,5 +1,7 @@
 //! Subscription limit types shared by the Claude and Codex providers.
 
+pub mod claude;
+pub mod http;
 pub mod state;
 
 /// Usage of one limit window (5-hour or weekly).

@@ -22,7 +22,7 @@ ureq = { version = "3.5.0", default-features = false, features = ["native-tls", 
 
 [dependencies.windows]
 version = "0.62.2"
-features = ["Win32_Globalization"]
+features = ["Win32_Foundation", "Win32_Globalization", "Win32_System_Time"]
 
 [build-dependencies]
 embed-resource = "3.0.12"
