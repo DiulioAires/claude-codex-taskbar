@@ -103,7 +103,7 @@ fn wide_z(s: &str) -> Vec<u16> {
 }
 
 fn show_menu(hwnd: HWND) {
-    let Some((lang, autostart)) = with_app(|app| (app.lang, false)) else {
+    let Some((lang, autostart)) = with_app(|app| (app.lang, crate::autostart::is_enabled())) else {
         return;
     };
     // SAFETY: menu is created, tracked and destroyed here; the app is not borrowed meanwhile.
@@ -140,11 +140,17 @@ fn show_menu(hwnd: HWND) {
         cmd.0 as usize
     };
     match cmd {
-        CMD_SETTINGS => {}
+        CMD_SETTINGS => super::settings::open(hwnd),
         CMD_REFRESH => {
             with_app(|app| app.control.wake());
         }
-        CMD_AUTOSTART => {}
+        CMD_AUTOSTART => {
+            let _ = if autostart {
+                crate::autostart::disable()
+            } else {
+                crate::autostart::enable()
+            };
+        }
         CMD_EXIT => {
             // SAFETY: hwnd is our live window.
             unsafe {
@@ -385,8 +391,10 @@ pub fn run(app: App) -> i32 {
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
-            let _ = TranslateMessage(&msg);
-            DispatchMessageW(&msg);
+            if !super::settings::is_dialog_message(&msg) {
+                let _ = TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
         }
         let _ = UnhookWinEvent(hook);
         APP.with(|cell| cell.borrow_mut().take());

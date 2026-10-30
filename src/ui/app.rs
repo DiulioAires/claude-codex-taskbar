@@ -259,13 +259,13 @@ impl App {
     }
 }
 
-fn claude_provider() -> ClaudeProvider {
+pub(crate) fn claude_provider() -> ClaudeProvider {
     ClaudeProvider {
         creds_path: ClaudeProvider::default_path(),
     }
 }
 
-fn codex_provider() -> CodexProvider {
+pub(crate) fn codex_provider() -> CodexProvider {
     CodexProvider {
         home: CodexProvider::default_home(),
     }
