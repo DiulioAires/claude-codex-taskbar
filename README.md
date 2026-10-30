@@ -27,7 +27,7 @@ Know, without interrupting your work, whether your PC is under load and how much
 
 ## Goals
 
-- **Truly lightweight**: a single small `.exe` (a few MB), no runtime to install, roughly 10–20 MB of RAM and near-zero CPU when idle.
+- **Truly lightweight**: a single `.exe` under 1 MB, no runtime to install, about 15 MB of RAM and near-zero CPU while running (see the [Task Manager screenshot](#how-much-memory-and-cpu-does-it-use)).
 - **Standalone**: download and run. The app itself offers "Start with Windows".
 - **Native**: written in Rust using raw Win32 via the [`windows`](https://crates.io/crates/windows) crate, drawn with Direct2D/DirectWrite.
 - **Honest numbers**: an expired token or a broken endpoint shows a clear error state, never a fake `0%` or silently stale data.
@@ -118,23 +118,27 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the toolchain setup.
 
 ## FAQ
 
-**How do I see my Claude Code usage limits on Windows without opening a terminal?**
+### How do I see my Claude Code usage limits on Windows without opening a terminal?
 Install this app: the taskbar shows the percentage used of your Claude Code 5-hour session window and weekly limit (the same numbers as `/usage` in Claude Code), updated every 2 minutes. Hover for the reset times.
 
-**How do I check my Codex (ChatGPT plan) rate limits on Windows?**
+### How do I check my Codex (ChatGPT plan) rate limits on Windows?
 Same app: with the Codex CLI logged in (`codex login`), the strip shows the 5-hour and weekly percentages that `/status` reports in Codex.
 
-**Does it need an API key or my password?**
+### Does it need an API key or my password?
 No. It reads the login that the official `claude` and `codex` CLIs already saved on your PC, read-only, and talks only to the providers' own endpoints.
 
-**Does it work on Windows 10?**
+### Does it work on Windows 10?
 Yes. It runs on Windows 11 and Windows 10 (x64).
 
-**Does it work on macOS or Linux?**
+### Does it work on macOS or Linux?
 No. It targets the Windows taskbar. On macOS, menu-bar apps cover the same need (see below).
 
-**How much memory and CPU does it use?**
-About 10–20 MB of private memory and near-zero CPU: hardware is sampled once per second through the same performance counters Task Manager uses.
+### How much memory and CPU does it use?
+Less than 16 MB of memory and near-zero CPU, with no disk or network activity between limit refreshes. Hardware is sampled once per second through the same performance counters Task Manager uses.
+
+![Task Manager row for claude-codex-taskbar: 0% CPU, 14.5 MB memory, 0 MB/s disk, 0 Mbps network](docs/screenshot-pc-usage.png)
+
+*Task Manager while running: CPU 0%, memory 14.5 MB, disk 0 MB/s, network 0 Mbps.*
 
 ## Alternatives and related tools
 
