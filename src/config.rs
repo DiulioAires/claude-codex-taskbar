@@ -17,6 +17,10 @@ pub struct Config {
     /// Keys from [`item_key`] of items the user turned off.
     pub hidden_items: Vec<String>,
     pub first_run_done: bool,
+    /// Opt-in: run `claude auth status` when the Claude login has expired.
+    pub keep_claude_login: bool,
+    /// The user was already asked about `keep_claude_login`.
+    pub keepalive_asked: bool,
 }
 
 impl Default for Config {
@@ -28,6 +32,8 @@ impl Default for Config {
             codex_enabled: false,
             hidden_items: Vec::new(),
             first_run_done: false,
+            keep_claude_login: false,
+            keepalive_asked: false,
         }
     }
 }
@@ -117,6 +123,8 @@ mod tests {
             codex_enabled: false,
             hidden_items: vec!["gpu".into()],
             first_run_done: true,
+            keep_claude_login: true,
+            keepalive_asked: true,
         };
         cfg.save_to(&path).unwrap();
         assert_eq!(Config::load_from(&path), cfg);
@@ -144,6 +152,8 @@ mod tests {
         assert_eq!(cfg.hw_interval_secs, 1);
         assert_eq!(cfg.limits_interval_secs, 120);
         assert!(!cfg.first_run_done);
+        assert!(!cfg.keep_claude_login, "keep-alive is opt-in");
+        assert!(!cfg.keepalive_asked);
     }
 
     #[test]

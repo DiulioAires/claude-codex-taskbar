@@ -15,7 +15,8 @@ use windows::Win32::UI::Controls::{
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CW_USEDEFAULT, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu,
     DestroyWindow, DispatchMessageW, EVENT_SYSTEM_FOREGROUND, GetCursorPos, GetMessageW,
-    HWND_TOPMOST, IDC_ARROW, KillTimer, LoadCursorW, MF_CHECKED, MF_SEPARATOR, MF_STRING, MSG,
+    HWND_TOPMOST, IDC_ARROW, IDYES, KillTimer, LoadCursorW, MB_DEFBUTTON2, MB_ICONQUESTION,
+    MB_SETFOREGROUND, MB_YESNO, MF_CHECKED, MF_SEPARATOR, MF_STRING, MSG, MessageBoxW,
     PBT_APMRESUMEAUTOMATIC, PostMessageW, PostQuitMessage, RegisterClassExW,
     RegisterWindowMessageW, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
     SendMessageW, SetForegroundWindow, SetTimer, SetWindowPos, ShowWindow, TPM_BOTTOMALIGN,
@@ -412,6 +413,17 @@ pub fn run(app: App) -> i32 {
         // A left-aligned taskbar leaves no room, so the strip stays hidden: explain why.
         if with_app(|app| app.taskbar_hints().0) == Some(true) {
             super::settings::open(hwnd);
+        }
+        // One-time opt-in invitation; the app is not borrowed while the modal box runs.
+        if let Some(body) = with_app(|app| app.keepalive_prompt()).flatten() {
+            let body = wide_z(body);
+            let answer = MessageBoxW(
+                None,
+                PCWSTR(body.as_ptr()),
+                w!("Taskbar Usage"),
+                MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2 | MB_SETFOREGROUND,
+            );
+            with_app(|app| app.answer_keepalive_prompt(answer == IDYES));
         }
 
         let mut msg = MSG::default();

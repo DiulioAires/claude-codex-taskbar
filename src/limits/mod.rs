@@ -3,6 +3,7 @@
 pub mod claude;
 pub mod codex;
 pub mod http;
+pub mod keepalive;
 pub mod state;
 pub mod worker;
 

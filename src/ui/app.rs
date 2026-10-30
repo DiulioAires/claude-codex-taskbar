@@ -9,13 +9,16 @@ use super::taskbar::{
 use super::view::{ItemView, build_items, tooltip_text};
 use crate::config::{self, Config};
 use crate::hw::{HwSnapshot, Sampler};
+use crate::i18n::{Key, fmt, t};
 use crate::i18n::{Lang, detect_lang};
 use crate::limits::claude::ClaudeProvider;
 use crate::limits::codex::CodexProvider;
+use crate::limits::keepalive::{KeepAlive, Outcome, run_claude_auth_status};
 use crate::limits::state::{STALE_SECS, age_status, next_status};
 use crate::limits::worker::{Control, Fetcher, LimitResult, spawn_queued};
 use crate::limits::{Provider, ProviderStatus};
 use crate::model::Kind;
+use crate::timeutil::format_local_hhmm;
 use crate::timeutil::now_unix;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -53,6 +56,7 @@ pub struct App {
     light: bool,
     pub shown: bool,
     inbox: Option<Receiver<LimitResult>>,
+    keepalive: KeepAlive,
 }
 
 fn light_theme() -> bool {
@@ -133,6 +137,7 @@ impl App {
             light: light_theme(),
             shown: false,
             inbox: None,
+            keepalive: KeepAlive::default(),
             cfg,
             cfg_path,
         };
@@ -186,6 +191,40 @@ impl App {
             Ok((usage, false, at)) => next_status(status, Ok(usage), at),
             Err(err) => next_status(status, Err(err), now),
         };
+        if r.kind == Kind::Claude {
+            self.keep_claude_login_active(now);
+        }
+    }
+
+    /// Opt-in: once the Claude token has expired, let the official CLI renew it.
+    fn keep_claude_login_active(&mut self, now: i64) {
+        self.keepalive.observe(&self.claude, now);
+        if !self
+            .keepalive
+            .should_run(self.cfg.keep_claude_login, &self.claude, now)
+        {
+            return;
+        }
+        self.keepalive.started(now);
+        let control = self.control.clone();
+        std::thread::spawn(move || {
+            run_claude_auth_status();
+            // Re-read the credentials right away to see whether the CLI renewed them.
+            control.wake();
+        });
+    }
+
+    /// First-run invitation for the opt-in keep-alive; `None` when not applicable.
+    pub fn keepalive_prompt(&self) -> Option<&'static str> {
+        (!self.cfg.keepalive_asked && claude_provider().has_login())
+            .then(|| t(self.lang, Key::KeepAlivePromptBody))
+    }
+
+    pub fn answer_keepalive_prompt(&mut self, enable: bool) {
+        let mut cfg = self.cfg.clone();
+        cfg.keepalive_asked = true;
+        cfg.keep_claude_login = enable;
+        self.apply_config(cfg);
     }
 
     pub fn theme_changed(&mut self) {
@@ -299,6 +338,28 @@ impl App {
             .map_or((false, false), |t| (t.left_aligned, t.widgets_button_on));
         let (claude, codex) = self.displayed_statuses();
         let text = tooltip_text(self.lang, &claude, &codex, &hidden, left, widgets);
+        let mut text = text;
+        if self.cfg.keep_claude_login && claude != ProviderStatus::Disabled {
+            let line = match self.keepalive.outcome() {
+                Outcome::Renewed { at } => fmt(
+                    t(self.lang, Key::KeepAliveRenewedFmt),
+                    &format_local_hhmm(at),
+                ),
+                Outcome::StillExpired { tried_at } => fmt(
+                    t(self.lang, Key::KeepAliveTriedFmt),
+                    &format_local_hhmm(tried_at),
+                ),
+                Outcome::None => String::new(),
+            };
+            if !line.is_empty() {
+                text.push_str(
+                    "
+
+",
+                );
+                text.push_str(&line);
+            }
+        }
         if text.is_empty() {
             "Taskbar Usage".into()
         } else {

@@ -56,6 +56,10 @@ pub enum Key {
     SettingsHwInterval,
     SettingsLimitsInterval,
     SettingsWeekSuffix,
+    KeepAliveSetting,
+    KeepAlivePromptBody,
+    KeepAliveRenewedFmt,
+    KeepAliveTriedFmt,
     Ok,
     Cancel,
 }
@@ -89,6 +93,10 @@ impl Key {
         Key::SettingsHwInterval,
         Key::SettingsLimitsInterval,
         Key::SettingsWeekSuffix,
+        Key::KeepAliveSetting,
+        Key::KeepAlivePromptBody,
+        Key::KeepAliveRenewedFmt,
+        Key::KeepAliveTriedFmt,
         Key::Ok,
         Key::Cancel,
     ];
@@ -150,6 +158,30 @@ pub fn t(lang: Lang, key: Key) -> &'static str {
             "Atualização dos limites (60–3600 s)",
         ),
         Key::SettingsWeekSuffix => ("weekly", "semanal"),
+        Key::KeepAliveSetting => (
+            "Keep Claude login active (experimental)",
+            "Manter login do Claude ativo (experimental)",
+        ),
+        Key::KeepAlivePromptBody => (
+            "Your Claude Code login expires after about 8 hours without use, and the strip then shows —.
+
+Keep it active? When it expires, the app runs `claude auth status` in the background (no prompt is sent, no quota is used) so Claude Code renews its own login.
+
+You can change this later in Settings.",
+            "O login do Claude Code expira depois de cerca de 8 horas sem uso, e a faixa passa a mostrar —.
+
+Manter ativo? Quando expirar, o app roda `claude auth status` em segundo plano (nenhuma mensagem é enviada, não gasta cota) para o próprio Claude Code renovar o login.
+
+Você pode mudar isso depois nas Configurações.",
+        ),
+        Key::KeepAliveRenewedFmt => (
+            "Login renewed via `claude auth status` at {}",
+            "Login renovado via `claude auth status` às {}",
+        ),
+        Key::KeepAliveTriedFmt => (
+            "Ran `claude auth status` at {}; login still expired",
+            "`claude auth status` rodou às {}; login continua expirado",
+        ),
         Key::Ok => ("OK", "OK"),
         Key::Cancel => ("Cancel", "Cancelar"),
     };

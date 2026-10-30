@@ -43,6 +43,7 @@ enum Toggle {
     Codex,
     Item(ItemId),
     Autostart,
+    KeepAlive,
 }
 
 struct State {
@@ -285,6 +286,11 @@ fn create(parent: HWND, cfg: Config, disks: &[DiskReading], lang: Lang, hints: &
             b.check(&format!("Codex — {codex_login}"), cfg.codex_enabled),
         ));
 
+        checks.push((
+            Toggle::KeepAlive,
+            b.check(t(lang, Key::KeepAliveSetting), cfg.keep_claude_login),
+        ));
+
         b.header(t(lang, Key::SettingsItems));
         let weekly = t(lang, Key::SettingsWeekSuffix);
         let mut items: Vec<(ItemId, String)> = vec![
@@ -403,6 +409,10 @@ fn apply() {
                 Toggle::Codex => cfg.codex_enabled = on,
                 Toggle::Item(id) => cfg.set_visible(id, on),
                 Toggle::Autostart => autostart_on = Some(on),
+                Toggle::KeepAlive => {
+                    cfg.keep_claude_login = on;
+                    cfg.keepalive_asked = true;
+                }
             }
         }
         cfg.hw_interval_secs = read_number(s.hw_edit, cfg.hw_interval_secs);
