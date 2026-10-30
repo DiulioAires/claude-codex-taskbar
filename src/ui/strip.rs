@@ -1,0 +1,395 @@
+//! The strip window: creation, message handling, timers, tooltip and context menu.
+
+use super::app::{App, spawn_worker};
+use crate::i18n::{Key, t};
+use crate::limits::worker::LimitResult;
+use std::cell::RefCell;
+use std::sync::atomic::{AtomicIsize, Ordering};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent};
+use windows::Win32::UI::Controls::{
+    ICC_WIN95_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx, NMTTDISPINFOW, TOOLTIPS_CLASSW,
+    TTDT_AUTOPOP, TTF_IDISHWND, TTF_SUBCLASS, TTM_ADDTOOLW, TTM_SETDELAYTIME, TTM_SETMAXTIPWIDTH,
+    TTN_GETDISPINFOW, TTS_ALWAYSTIP, TTS_NOPREFIX, TTTOOLINFOW,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    AppendMenuW, CW_USEDEFAULT, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu,
+    DestroyWindow, DispatchMessageW, EVENT_SYSTEM_FOREGROUND, GetCursorPos, GetMessageW,
+    HWND_TOPMOST, IDC_ARROW, KillTimer, LoadCursorW, MF_CHECKED, MF_SEPARATOR, MF_STRING, MSG,
+    PostMessageW, PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SW_HIDE,
+    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SendMessageW, SetForegroundWindow,
+    SetTimer, SetWindowPos, ShowWindow, TPM_BOTTOMALIGN, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    TrackPopupMenu, TranslateMessage, WINEVENT_OUTOFCONTEXT, WM_APP, WM_DESTROY, WM_DISPLAYCHANGE,
+    WM_DPICHANGED, WM_NOTIFY, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+};
+use windows::core::{PCWSTR, PWSTR, w};
+
+pub const WM_APP_LIMITS: u32 = WM_APP + 1;
+pub const WM_APP_REASSERT: u32 = WM_APP + 2;
+
+const TIMER_HW: usize = 1;
+const TIMER_TOPMOST: usize = 2;
+const TIMER_DISKS: usize = 3;
+const TOPMOST_MS: u32 = 2000;
+const DISKS_MS: u32 = 30_000;
+
+const CMD_SETTINGS: usize = 1;
+const CMD_REFRESH: usize = 2;
+const CMD_AUTOSTART: usize = 3;
+const CMD_EXIT: usize = 4;
+
+thread_local! {
+    static APP: RefCell<Option<App>> = const { RefCell::new(None) };
+    static TIP_TEXT: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
+}
+
+static STRIP: AtomicIsize = AtomicIsize::new(0);
+static TASKBAR_CREATED: AtomicIsize = AtomicIsize::new(0);
+
+/// Runs `f` on the app unless it is already borrowed (re-entrant message during a modal loop).
+pub fn with_app<R>(f: impl FnOnce(&mut App) -> R) -> Option<R> {
+    APP.with(|cell| cell.try_borrow_mut().ok()?.as_mut().map(f))
+}
+
+pub fn show(hwnd: HWND, app: &mut App) {
+    if !app.shown {
+        // SAFETY: hwnd is our live window.
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        }
+        app.shown = true;
+    }
+    reassert_topmost(hwnd);
+}
+
+pub fn hide(hwnd: HWND, app: &mut App) {
+    if app.shown {
+        // SAFETY: hwnd is our live window.
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_HIDE);
+        }
+        app.shown = false;
+    }
+}
+
+fn reassert_topmost(hwnd: HWND) {
+    // SAFETY: hwnd is our live window.
+    unsafe {
+        let _ = SetWindowPos(
+            hwnd,
+            Some(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
+    }
+}
+
+fn render(hwnd: HWND) {
+    with_app(|app| app.render(hwnd));
+}
+
+fn set_hw_timer(hwnd: HWND, secs: u32) {
+    // SAFETY: hwnd is our live window; re-setting an id replaces the timer.
+    unsafe { SetTimer(Some(hwnd), TIMER_HW, secs * 1000, None) };
+}
+
+fn wide_z(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+fn show_menu(hwnd: HWND) {
+    let Some((lang, autostart)) = with_app(|app| (app.lang, false)) else {
+        return;
+    };
+    // SAFETY: menu is created, tracked and destroyed here; the app is not borrowed meanwhile.
+    let cmd = unsafe {
+        let Ok(menu) = CreatePopupMenu() else { return };
+        let item = |id: usize, key: Key, checked: bool| {
+            let text = wide_z(t(lang, key));
+            let flags = if checked {
+                MF_STRING | MF_CHECKED
+            } else {
+                MF_STRING
+            };
+            let _ = AppendMenuW(menu, flags, id, PCWSTR(text.as_ptr()));
+        };
+        item(CMD_SETTINGS, Key::MenuSettings, false);
+        item(CMD_REFRESH, Key::MenuRefresh, false);
+        item(CMD_AUTOSTART, Key::MenuAutostart, autostart);
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+        item(CMD_EXIT, Key::MenuExit, false);
+        let mut pt = POINT::default();
+        let _ = GetCursorPos(&mut pt);
+        // Required so the menu closes when clicking elsewhere.
+        let _ = SetForegroundWindow(hwnd);
+        let cmd = TrackPopupMenu(
+            menu,
+            TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN,
+            pt.x,
+            pt.y,
+            None,
+            hwnd,
+            None,
+        );
+        let _ = DestroyMenu(menu);
+        cmd.0 as usize
+    };
+    match cmd {
+        CMD_SETTINGS => {}
+        CMD_REFRESH => {
+            with_app(|app| app.control.wake());
+        }
+        CMD_AUTOSTART => {}
+        CMD_EXIT => {
+            // SAFETY: hwnd is our live window.
+            unsafe {
+                let _ = DestroyWindow(hwnd);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Called by the settings window after the user applies changes.
+pub fn config_applied(hwnd: HWND, cfg: crate::config::Config) {
+    let secs = cfg.hw_interval_secs;
+    with_app(|app| app.apply_config(cfg));
+    set_hw_timer(hwnd, secs.clamp(1, 5));
+    render(hwnd);
+}
+
+extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    let taskbar_created = TASKBAR_CREATED.load(Ordering::Relaxed) as u32;
+    match msg {
+        WM_TIMER => {
+            match wparam.0 {
+                TIMER_HW => {
+                    with_app(|app| app.sample_hw());
+                }
+                TIMER_TOPMOST => {
+                    with_app(|app| app.tick_icons());
+                }
+                TIMER_DISKS => {
+                    with_app(|app| app.refresh_instances());
+                }
+                _ => {}
+            }
+            render(hwnd);
+            LRESULT(0)
+        }
+        WM_APP_LIMITS => {
+            // SAFETY: the worker boxed this LimitResult and gave up ownership when posting.
+            let result = unsafe { Box::from_raw(lparam.0 as *mut LimitResult) };
+            with_app(|app| app.on_limits(*result));
+            render(hwnd);
+            LRESULT(0)
+        }
+        WM_APP_REASSERT => {
+            render(hwnd);
+            LRESULT(0)
+        }
+        WM_DISPLAYCHANGE | WM_DPICHANGED => {
+            with_app(|app| app.invalidate_icons());
+            render(hwnd);
+            LRESULT(0)
+        }
+        WM_SETTINGCHANGE => {
+            with_app(|app| {
+                app.theme_changed();
+                app.invalidate_icons();
+            });
+            render(hwnd);
+            LRESULT(0)
+        }
+        WM_RBUTTONUP => {
+            show_menu(hwnd);
+            LRESULT(0)
+        }
+        WM_NOTIFY => {
+            // SAFETY: WM_NOTIFY's lparam points to an NMHDR-prefixed struct.
+            let hdr = unsafe { &*(lparam.0 as *const windows::Win32::UI::Controls::NMHDR) };
+            if hdr.code == TTN_GETDISPINFOW {
+                let text = with_app(|app| app.tooltip()).unwrap_or_default();
+                TIP_TEXT.with(|tip| {
+                    let mut tip = tip.borrow_mut();
+                    *tip = wide_z(&text);
+                    // SAFETY: lparam is an NMTTDISPINFOW for TTN_GETDISPINFOW; the buffer lives
+                    // in a thread-local until the next notification.
+                    unsafe {
+                        let info = &mut *(lparam.0 as *mut NMTTDISPINFOW);
+                        info.lpszText = PWSTR(tip.as_mut_ptr());
+                    }
+                });
+            }
+            LRESULT(0)
+        }
+        WM_DESTROY => {
+            with_app(|app| app.control.stop());
+            // SAFETY: timers belong to this window.
+            unsafe {
+                for id in [TIMER_HW, TIMER_TOPMOST, TIMER_DISKS] {
+                    let _ = KillTimer(Some(hwnd), id);
+                }
+                PostQuitMessage(0);
+            }
+            LRESULT(0)
+        }
+        _ if taskbar_created != 0 && msg == taskbar_created => {
+            with_app(|app| app.invalidate_icons());
+            render(hwnd);
+            LRESULT(0)
+        }
+        // SAFETY: default handling for everything else.
+        _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
+}
+
+extern "system" fn on_foreground(
+    _hook: HWINEVENTHOOK,
+    _event: u32,
+    _hwnd: HWND,
+    _id_object: i32,
+    _id_child: i32,
+    _thread: u32,
+    _time: u32,
+) {
+    let strip = STRIP.load(Ordering::Relaxed);
+    if strip != 0 {
+        // SAFETY: posting to our own window; failure is harmless.
+        unsafe {
+            let _ = PostMessageW(
+                Some(HWND(strip as _)),
+                WM_APP_REASSERT,
+                WPARAM(0),
+                LPARAM(0),
+            );
+        }
+    }
+}
+
+fn create_tooltip(hwnd: HWND) {
+    // SAFETY: standard tooltip setup on our window.
+    unsafe {
+        let Ok(tip) = CreateWindowExW(
+            WS_EX_TOPMOST,
+            TOOLTIPS_CLASSW,
+            PCWSTR::null(),
+            WS_POPUP
+                | windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(
+                    TTS_NOPREFIX | TTS_ALWAYSTIP,
+                ),
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            Some(hwnd),
+            None,
+            None,
+            None,
+        ) else {
+            return;
+        };
+        let ti = TTTOOLINFOW {
+            cbSize: size_of::<TTTOOLINFOW>() as u32,
+            uFlags: TTF_IDISHWND | TTF_SUBCLASS,
+            hwnd,
+            uId: hwnd.0 as usize,
+            // LPSTR_TEXTCALLBACKW: ask for text via TTN_GETDISPINFOW.
+            lpszText: PWSTR(-1isize as *mut u16),
+            ..Default::default()
+        };
+        SendMessageW(
+            tip,
+            TTM_ADDTOOLW,
+            None,
+            Some(LPARAM(&ti as *const _ as isize)),
+        );
+        SendMessageW(tip, TTM_SETMAXTIPWIDTH, None, Some(LPARAM(420)));
+        SendMessageW(
+            tip,
+            TTM_SETDELAYTIME,
+            Some(WPARAM(TTDT_AUTOPOP as usize)),
+            Some(LPARAM(30_000)),
+        );
+    }
+}
+
+/// Creates the window, starts timers and the worker, and runs the message loop.
+pub fn run(app: App) -> i32 {
+    // SAFETY: standard Win32 window bootstrap on the UI thread.
+    unsafe {
+        let icc = INITCOMMONCONTROLSEX {
+            dwSize: size_of::<INITCOMMONCONTROLSEX>() as u32,
+            dwICC: ICC_WIN95_CLASSES,
+        };
+        let _ = InitCommonControlsEx(&icc);
+        let Ok(instance) = GetModuleHandleW(None) else {
+            return 1;
+        };
+        let class = WNDCLASSEXW {
+            cbSize: size_of::<WNDCLASSEXW>() as u32,
+            lpfnWndProc: Some(wndproc),
+            hInstance: instance.into(),
+            hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
+            lpszClassName: w!("WidgetUsageStrip"),
+            ..Default::default()
+        };
+        if RegisterClassExW(&class) == 0 {
+            return 1;
+        }
+        let Ok(hwnd) = CreateWindowExW(
+            WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE,
+            w!("WidgetUsageStrip"),
+            w!("Taskbar Usage"),
+            WS_POPUP,
+            0,
+            0,
+            1,
+            1,
+            None,
+            None,
+            Some(instance.into()),
+            None,
+        ) else {
+            return 1;
+        };
+        STRIP.store(hwnd.0 as isize, Ordering::Relaxed);
+        TASKBAR_CREATED.store(
+            RegisterWindowMessageW(w!("TaskbarCreated")) as isize,
+            Ordering::Relaxed,
+        );
+        let hw_secs = app.cfg.hw_interval_secs;
+        let control = app.control.clone();
+        APP.with(|cell| *cell.borrow_mut() = Some(app));
+        create_tooltip(hwnd);
+        with_app(|app| app.sample_hw());
+        set_hw_timer(hwnd, hw_secs);
+        SetTimer(Some(hwnd), TIMER_TOPMOST, TOPMOST_MS, None);
+        SetTimer(Some(hwnd), TIMER_DISKS, DISKS_MS, None);
+        let hook = SetWinEventHook(
+            EVENT_SYSTEM_FOREGROUND,
+            EVENT_SYSTEM_FOREGROUND,
+            None,
+            Some(on_foreground),
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT,
+        );
+        spawn_worker(hwnd, control);
+        render(hwnd);
+
+        let mut msg = MSG::default();
+        while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+        let _ = UnhookWinEvent(hook);
+        APP.with(|cell| cell.borrow_mut().take());
+        msg.wParam.0 as i32
+    }
+}
