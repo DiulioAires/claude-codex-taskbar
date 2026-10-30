@@ -278,6 +278,13 @@ impl App {
         self.taskbar = Some(info);
     }
 
+    /// Hints input: (left-aligned icons, Widgets button on) from the last taskbar query.
+    pub fn taskbar_hints(&self) -> (bool, bool) {
+        self.taskbar
+            .as_ref()
+            .map_or((false, false), |t| (t.left_aligned, t.widgets_button_on))
+    }
+
     pub fn tooltip(&self) -> String {
         let hidden: Vec<ItemView> = match &self.layout {
             Some(l) if l.overflow => (0..self.items.len())

@@ -28,6 +28,8 @@ use windows::core::{PCWSTR, PWSTR, w};
 
 pub const WM_APP_LIMITS: u32 = WM_APP + 1;
 pub const WM_APP_REASSERT: u32 = WM_APP + 2;
+/// Sent by a second launch of the exe: the running instance opens Settings.
+pub const WM_APP_OPEN_SETTINGS: u32 = WM_APP + 3;
 
 const TIMER_HW: usize = 1;
 const TIMER_TOPMOST: usize = 2;
@@ -205,6 +207,10 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             // Foreground changes coincide with apps opening/closing, which shifts the icons.
             with_app(|app| app.invalidate_icons());
             render(hwnd);
+            LRESULT(0)
+        }
+        WM_APP_OPEN_SETTINGS => {
+            super::settings::open(hwnd);
             LRESULT(0)
         }
         WM_DISPLAYCHANGE | WM_DPICHANGED => {
@@ -403,6 +409,10 @@ pub fn run(app: App) -> i32 {
         let inbox = spawn_worker(hwnd, control);
         with_app(|app| app.set_inbox(inbox));
         render(hwnd);
+        // A left-aligned taskbar leaves no room, so the strip stays hidden: explain why.
+        if with_app(|app| app.taskbar_hints().0) == Some(true) {
+            super::settings::open(hwnd);
+        }
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {

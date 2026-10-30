@@ -2,6 +2,7 @@
 
 use super::app::{claude_provider, codex_provider};
 use super::strip::{config_applied, with_app};
+use super::view::setup_hints;
 use crate::autostart;
 use crate::config::Config;
 use crate::hw::DiskReading;
@@ -11,7 +12,7 @@ use crate::model::ItemId;
 use std::cell::RefCell;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    COLOR_WINDOW, CreateFontIndirectW, DeleteObject, HBRUSH, HFONT, HGDIOBJ,
+    COLOR_BTNFACE, CreateFontIndirectW, DeleteObject, HBRUSH, HFONT, HGDIOBJ,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{BST_CHECKED, BST_UNCHECKED};
@@ -145,6 +146,36 @@ impl Builder {
         self.y += ROW;
     }
 
+    /// Wrapped two-line notice (setup hints).
+    fn note(&mut self, text: &str) {
+        let text = wide_z(&format!("⚠ {text}"));
+        // SAFETY: child control of our live window; font outlives the window.
+        unsafe {
+            let hwnd = CreateWindowExW(
+                Default::default(),
+                w!("STATIC"),
+                PCWSTR(text.as_ptr()),
+                WS_CHILD | WS_VISIBLE,
+                self.px(PAD),
+                self.px(self.y),
+                self.px(WIDTH - 2 * PAD),
+                self.px(2 * ROW + 4),
+                Some(self.parent),
+                None,
+                None,
+                None,
+            )
+            .unwrap_or_default();
+            SendMessageW(
+                hwnd,
+                WM_SETFONT,
+                Some(WPARAM(self.font.0 as usize)),
+                Some(LPARAM(1)),
+            );
+        }
+        self.y += 2 * ROW + 10;
+    }
+
     fn check(&mut self, text: &str, checked: bool) -> HWND {
         let style = WINDOW_STYLE(BS_AUTOCHECKBOX as u32) | WS_TABSTOP;
         let hwnd = self.control(w!("BUTTON"), text, style, PAD + 8, WIDTH - 2 * PAD - 8, 0);
@@ -181,15 +212,21 @@ pub fn open(parent: HWND) {
         }
         return;
     }
-    let Some((cfg, disks, lang)) =
-        with_app(|app| (app.cfg.clone(), app.hw.disks.clone(), app.lang))
-    else {
+    let Some((cfg, disks, lang, (left_aligned, widgets_on))) = with_app(|app| {
+        (
+            app.cfg.clone(),
+            app.hw.disks.clone(),
+            app.lang,
+            app.taskbar_hints(),
+        )
+    }) else {
         return;
     };
-    create(parent, cfg, &disks, lang);
+    let hints = setup_hints(left_aligned, widgets_on);
+    create(parent, cfg, &disks, lang, &hints);
 }
 
-fn create(parent: HWND, cfg: Config, disks: &[DiskReading], lang: Lang) {
+fn create(parent: HWND, cfg: Config, disks: &[DiskReading], lang: Lang, hints: &[Key]) {
     // SAFETY: standard window creation on the UI thread.
     unsafe {
         let Ok(instance) = GetModuleHandleW(None) else {
@@ -200,7 +237,7 @@ fn create(parent: HWND, cfg: Config, disks: &[DiskReading], lang: Lang) {
             lpfnWndProc: Some(wndproc),
             hInstance: instance.into(),
             hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
-            hbrBackground: HBRUSH((COLOR_WINDOW.0 + 1) as _),
+            hbrBackground: HBRUSH((COLOR_BTNFACE.0 + 1) as _),
             lpszClassName: w!("WidgetUsageSettings"),
             ..Default::default()
         };
@@ -233,6 +270,9 @@ fn create(parent: HWND, cfg: Config, disks: &[DiskReading], lang: Lang) {
         };
         let mut checks = Vec::new();
 
+        for key in hints {
+            b.note(t(lang, *key));
+        }
         b.header(t(lang, Key::SettingsProviders));
         let claude_login = login_text(lang, claude_provider().has_login(), Key::ClaudeNoLogin);
         let codex_login = login_text(lang, codex_provider().has_login(), Key::CodexNoLogin);

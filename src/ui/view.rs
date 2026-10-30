@@ -204,18 +204,24 @@ pub fn tooltip_text(
             let _ = write!(out, "\n  {} {}", item.label, value_text(item.value));
         }
     }
-    for (on, key) in [
-        (left_aligned, Key::HintCenterTaskbar),
-        (widgets_button_on, Key::HintWidgetsButton),
-    ] {
-        if on {
-            if !out.is_empty() {
-                out.push_str("\n\n");
-            }
-            out.push_str(t(lang, key));
+    for key in setup_hints(left_aligned, widgets_button_on) {
+        if !out.is_empty() {
+            out.push_str("\n\n");
         }
+        out.push_str(t(lang, key));
     }
     out
+}
+
+/// Taskbar settings the user should change for the strip to show up well.
+pub fn setup_hints(left_aligned: bool, widgets_button_on: bool) -> Vec<Key> {
+    [
+        (left_aligned, Key::HintCenterTaskbar),
+        (widgets_button_on, Key::HintWidgetsButton),
+    ]
+    .into_iter()
+    .filter_map(|(on, key)| on.then_some(key))
+    .collect()
 }
 
 #[cfg(test)]
@@ -394,5 +400,21 @@ mod aging_view_tests {
         );
         assert!(tip.contains("No recent data"));
         assert!(!tip.contains("()"));
+    }
+}
+
+#[cfg(test)]
+mod hint_tests {
+    use super::*;
+    use crate::i18n::Key;
+
+    #[test]
+    fn hints_follow_taskbar_state() {
+        assert_eq!(setup_hints(false, false), Vec::<Key>::new());
+        assert_eq!(setup_hints(true, false), [Key::HintCenterTaskbar]);
+        assert_eq!(
+            setup_hints(true, true),
+            [Key::HintCenterTaskbar, Key::HintWidgetsButton]
+        );
     }
 }
