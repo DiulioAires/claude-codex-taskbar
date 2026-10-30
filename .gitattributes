@@ -1,0 +1,37 @@
+# Normalize line endings: store text as LF in the repository.
+* text=auto eol=lf
+
+# Source and docs: always LF (rustfmt and cross-platform tooling expect it).
+*.rs     text eol=lf diff=rust
+*.toml   text eol=lf
+*.md     text eol=lf diff=markdown
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.json   text eol=lf
+*.jsonl  text eol=lf
+
+# Windows-only scripts and resources: keep CRLF in the working tree.
+*.ps1    text eol=crlf
+*.psm1   text eol=crlf
+*.psd1   text eol=crlf
+*.cmd    text eol=crlf
+*.bat    text eol=crlf
+*.rc     text eol=crlf
+*.sln    text eol=crlf
+
+# Lock file: collapse in GitHub diffs.
+Cargo.lock text eol=lf linguist-generated=true
+
+# Binary files
+*.exe    binary
+*.dll    binary
+*.pdb    binary
+*.ico    binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.webp   binary
+*.ttf    binary
+*.otf    binary
+*.zip    binary

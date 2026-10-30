@@ -1,0 +1,165 @@
+name: Bug report
+description: Something is not working as expected.
+title: "bug: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug!
+
+        **Never paste tokens or the contents of `.credentials.json` / `auth.json`.** Redact anything sensitive.
+        For security vulnerabilities, do not open an issue; follow [SECURITY.md](../blob/main/SECURITY.md) instead.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I removed any tokens, account IDs, or other sensitive data from this report.
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug. Screenshots of the strip and taskbar help a lot.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start the app
+        2. ...
+        3. See error
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: From the release you downloaded, or the commit hash if you built it yourself.
+      placeholder: "v0.1.0 or a1b2c3d"
+    validations:
+      required: true
+
+  - type: input
+    id: windows-build
+    attributes:
+      label: Windows version and build
+      description: Run `winver` and copy the version and OS build.
+      placeholder: "Windows 11 24H2, OS build 26100.2033"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      multiple: true
+      options:
+        - Positioning / taskbar overlap
+        - Hardware: CPU
+        - Hardware: RAM
+        - Hardware: GPU
+        - Hardware: Disk
+        - Claude Code limits
+        - Codex limits
+        - Tooltip
+        - Right-click menu
+        - Settings window
+        - Start with Windows
+        - Full-screen / auto-hide behavior
+        - Theme (light/dark)
+        - Performance (CPU/RAM use of the app)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: taskbar-alignment
+    attributes:
+      label: Taskbar alignment
+      description: Settings > Personalization > Taskbar > Taskbar behaviors > Taskbar alignment.
+      options:
+        - Center
+        - Left
+    validations:
+      required: true
+
+  - type: dropdown
+    id: taskbar-autohide
+    attributes:
+      label: Taskbar auto-hide
+      options:
+        - "Off"
+        - "On"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: widgets-button
+    attributes:
+      label: Windows Widgets button on the taskbar
+      options:
+        - "Off"
+        - "On"
+        - "Not sure"
+
+  - type: input
+    id: dpi
+    attributes:
+      label: Display scaling (DPI)
+      description: Settings > System > Display > Scale, for each monitor involved.
+      placeholder: "Primary: 150%, secondary: 100%"
+    validations:
+      required: true
+
+  - type: textarea
+    id: monitors
+    attributes:
+      label: Monitor setup
+      description: Number of monitors, resolutions, which one is primary, and whether the taskbar is shown on all displays.
+      placeholder: |
+        2 monitors
+        Primary: 2560x1440 @ 150% (laptop panel)
+        Secondary: 1920x1080 @ 100%
+        Taskbar shown on all displays: yes
+    validations:
+      required: true
+
+  - type: dropdown
+    id: theme
+    attributes:
+      label: Windows theme
+      options:
+        - Dark
+        - Light
+        - Custom (mixed)
+
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Relevant hardware (optional)
+      description: GPU model(s) and disks, if the bug is about hardware readings.
+      placeholder: "NVIDIA RTX 4070 + Intel UHD; NVMe SSD (C:) + SATA HDD (D:)"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Additional context or logs (optional)
+      description: Make sure nothing here contains tokens or credential file contents.
+      render: text

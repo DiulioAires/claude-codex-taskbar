@@ -1,0 +1,68 @@
+name: Feature request
+description: Suggest an idea or improvement.
+title: "feat: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! Please keep in mind the project's constraints:
+        **lightweight single `.exe`**, **Windows 11 only**, **no telemetry**, and **read-only credentials**.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this has not been proposed yet.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem are you trying to solve? Describe the need, not only the solution.
+      placeholder: "I often can't tell whether ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you like it to work? Mockups or sketches are welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches or workarounds you have tried or considered.
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact on footprint
+      description: Would this add dependencies, increase binary size, or add background work (CPU, network)?
+      options:
+        - None that I know of
+        - Small
+        - Significant
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you like to work on this?
+      options:
+        - "Yes, I'd like to open a PR"
+        - "Maybe, with some guidance"
+        - "No"
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context

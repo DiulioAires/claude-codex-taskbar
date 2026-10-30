@@ -1,0 +1,35 @@
+# Rust build output
+/target/
+
+# Note: Cargo.lock IS committed (this is a binary application).
+
+# Windows debug symbols and build artifacts
+*.pdb
+*.ilk
+*.exp
+*.lib
+
+# rustfmt backups
+**/*.rs.bk
+
+# Local AI-assistant / tooling workspace
+.superpowers/
+
+# IDEs and editors
+.vscode/
+.idea/
+.vs/
+*.code-workspace
+*.swp
+*~
+
+# OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Local environment files (never commit credentials)
+.env
+.env.*
