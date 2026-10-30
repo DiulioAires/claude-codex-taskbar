@@ -11,7 +11,7 @@ fn agent() -> Agent {
     Agent::config_builder()
         .timeout_global(Some(TIMEOUT))
         .http_status_as_error(false)
-        .user_agent(concat!("widget-usage-windows/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("claude-codex-taskbar/", env!("CARGO_PKG_VERSION")))
         .tls_config(
             TlsConfig::builder()
                 .provider(TlsProvider::NativeTls)

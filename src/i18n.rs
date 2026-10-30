@@ -146,7 +146,7 @@ pub fn t(lang: Lang, key: Key) -> &'static str {
         ),
         Key::HiddenItems => ("Not shown (no room):", "Não exibidos (sem espaço):"),
         Key::LoginFound => ("login found", "login encontrado"),
-        Key::SettingsTitle => ("Taskbar Usage — Settings", "Taskbar Usage — Configurações"),
+        Key::SettingsTitle => ("CCT — Settings", "CCT — Configurações"),
         Key::SettingsProviders => ("Subscriptions", "Assinaturas"),
         Key::SettingsItems => ("Items on the strip", "Itens na faixa"),
         Key::SettingsHwInterval => (

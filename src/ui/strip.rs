@@ -372,7 +372,7 @@ pub fn run(app: App) -> i32 {
         let Ok(hwnd) = CreateWindowExW(
             WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE,
             w!("WidgetUsageStrip"),
-            w!("Taskbar Usage"),
+            w!("CCT"),
             WS_POPUP,
             0,
             0,
@@ -420,7 +420,7 @@ pub fn run(app: App) -> i32 {
             let answer = MessageBoxW(
                 None,
                 PCWSTR(body.as_ptr()),
-                w!("Taskbar Usage"),
+                w!("CCT"),
                 MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2 | MB_SETFOREGROUND,
             );
             with_app(|app| app.answer_keepalive_prompt(&kinds, answer == IDYES));

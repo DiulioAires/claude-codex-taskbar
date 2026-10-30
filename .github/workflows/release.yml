@@ -20,10 +20,10 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          $name = "widget-usage-windows-${{ github.ref_name }}-x64"
+          $name = "claude-codex-taskbar-${{ github.ref_name }}-x64"
           New-Item -ItemType Directory -Force dist, $name | Out-Null
-          Copy-Item target/release/widget-usage-windows.exe dist/widget-usage-windows.exe
-          Copy-Item target/release/widget-usage-windows.exe, README.md, LICENSE $name
+          Copy-Item target/release/claude-codex-taskbar.exe dist/claude-codex-taskbar.exe
+          Copy-Item target/release/claude-codex-taskbar.exe, README.md, LICENSE, CHANGELOG.md $name
           Compress-Archive -Path "$name/*" -DestinationPath "dist/$name.zip"
           Get-ChildItem dist -File | ForEach-Object {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
@@ -36,5 +36,5 @@ jobs:
           generate_release_notes: true
           files: |
             dist/*.zip
-            dist/widget-usage-windows.exe
+            dist/claude-codex-taskbar.exe
             dist/SHA256SUMS.txt

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in improving widget-usage-windows! Everyone is welcome, whether you are fixing a typo, reporting a bug, reviewing the design, or writing code.
+Thanks for your interest in improving CCT (claude-codex-taskbar)! Everyone is welcome, whether you are fixing a typo, reporting a bug, reviewing the design, or writing code.
 
 By participating, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
@@ -18,7 +18,7 @@ The project is in **early development (v0.1)**: the app works, and the most valu
 
 ## Development setup
 
-The app targets **Windows 11** and is written in Rust using raw Win32 (the [`windows`](https://crates.io/crates/windows) crate) with Direct2D/DirectWrite.
+The app targets **Windows 11 and Windows 10** and is written in Rust using raw Win32 (the [`windows`](https://crates.io/crates/windows) crate) with Direct2D/DirectWrite.
 
 1. Install the **Rust stable** toolchain via [rustup](https://rustup.rs/).
 2. Use the **MSVC** target:
@@ -88,7 +88,7 @@ Write commit messages in English.
 
 1. Search existing issues first to avoid duplicates.
 2. Open a [feature request](../../issues/new?template=feature_request.yml) describing the **problem** you want solved, not only the solution.
-3. Consider the project's constraints: lightweight, single `.exe`, Windows 11 only, no telemetry, read-only credentials.
+3. Consider the project's constraints: lightweight, single `.exe`, Windows 10/11 only, no telemetry, read-only credentials.
 4. For larger changes, wait for a maintainer to agree on the approach before writing code. This avoids wasted effort on PRs that cannot be merged.
 
 ## Language

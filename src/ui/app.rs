@@ -402,11 +402,7 @@ impl App {
             let line = fmt(t(self.lang, key), &format_local_hhmm(when));
             text.push_str(&format!("\n\n{}: {line}", provider_name(kind)));
         }
-        if text.is_empty() {
-            "Taskbar Usage".into()
-        } else {
-            text
-        }
+        if text.is_empty() { "CCT".into() } else { text }
     }
 }
 

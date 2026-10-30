@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for the suggestion! Please keep in mind the project's constraints:
-        **lightweight single `.exe`**, **Windows 11 only**, **no telemetry**, and **read-only credentials**.
+        **lightweight single `.exe`**, **Windows 10/11 only**, **no telemetry**, and **read-only credentials**.
 
   - type: checkboxes
     id: checks

@@ -1,14 +1,14 @@
-# claude-codex-taskbar: Claude Code & Codex usage limits on the Windows 11 taskbar
+# CCT (claude-codex-taskbar): Claude Code & Codex usage limits on the Windows 11 / 10 taskbar
 
 [![CI](https://github.com/chiarorosa/claude-codex-taskbar/actions/workflows/ci.yml/badge.svg)](https://github.com/chiarorosa/claude-codex-taskbar/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/chiarorosa/claude-codex-taskbar)](https://github.com/chiarorosa/claude-codex-taskbar/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/chiarorosa/claude-codex-taskbar/total)](https://github.com/chiarorosa/claude-codex-taskbar/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Windows 11](https://img.shields.io/badge/Windows-11-0078D4?logo=windows11)
+![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows11)
 
-**A Windows 11 taskbar widget that shows your Claude Code and OpenAI Codex subscription usage (5-hour and weekly limits) next to a CPU, RAM, GPU and disk monitor.** One native `.exe` under 1 MB, written in Rust. No runtime, no telemetry, no login screen: it reuses your existing `claude` / `codex` CLI login.
+**A Windows 11 and Windows 10 taskbar widget that shows your Claude Code and OpenAI Codex subscription usage (5-hour and weekly limits) next to a CPU, RAM, GPU and disk monitor.** One native `.exe` under 1 MB, written in Rust. No runtime, no telemetry, no login screen: it reuses your existing `claude` / `codex` CLI login.
 
-A tiny, always-visible strip pinned over the **left corner of the Windows 11 taskbar** that shows, at a glance:
+A tiny, always-visible strip pinned over the **left corner of the Windows taskbar** that shows, at a glance:
 
 1. **Hardware usage**, like the *Performance* tab of Task Manager: CPU, RAM, GPU, and the active time of each physical disk.
 2. **Claude Code and Codex subscription limits**: the percentage **used** of the 5-hour window and of the weekly window.
@@ -55,21 +55,23 @@ Know, without interrupting your work, whether your PC is under load and how much
 
 ### Not planned (for v1)
 
-- Windows 10, macOS, or Linux support.
+- macOS or Linux support.
 - A Windows Widgets board (Win+W) widget.
 - Its own login screen or OAuth flow.
 - Usage history or charts over time.
 
 ## Requirements
 
-- Windows 11 (x64). ARM64 is desirable but not guaranteed for v1.
+- Windows 11 or Windows 10 (x64). ARM64 is desirable but not guaranteed yet.
 - No administrator privileges required.
 - For the limits items: a logged-in [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and/or Codex CLI on the same Windows user account.
 
 ## Installation
 
-1. Download `widget-usage-windows-<version>-x64.zip` from the [latest release](../../releases/latest) and extract it (or grab the bare `widget-usage-windows.exe`). It is a single file (under 1 MB): no installer, no runtime dependencies.
-2. Put it somewhere permanent (for example `%LOCALAPPDATA%\Programs\widget-usage-windows\`) and run it.
+> Upgrading from v0.1.x (`widget-usage-windows.exe`)? Just run the new `claude-codex-taskbar.exe`: it closes the old version, keeps your settings and moves *Start with Windows* to the new executable. You can then delete the old `.exe`.
+
+1. Download `claude-codex-taskbar-<version>-x64.zip` from the [latest release](../../releases/latest) and extract it (or grab the bare `claude-codex-taskbar.exe`). It is a single file (under 1 MB): no installer, no runtime dependencies.
+2. Put it somewhere permanent (for example `%LOCALAPPDATA%\Programs\claude-codex-taskbar\`) and run it.
 3. Right-click the strip → **Start with Windows** to launch it at sign-in (stored under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`).
 
 A `winget` package will follow after the first stable releases.
@@ -79,13 +81,13 @@ A `winget` package will follow after the first stable releases.
 Release builds are not code-signed yet, so SmartScreen may warn about an unrecognized app. Click **More info → Run anyway**. To make sure the file is the one published here, compare its hash with `SHA256SUMS.txt` attached to the release:
 
 ```powershell
-Get-FileHash .\widget-usage-windows.exe -Algorithm SHA256
+Get-FileHash .\claude-codex-taskbar.exe -Algorithm SHA256
 ```
 
 ### Building from source
 
 ```powershell
-cargo build --release   # target\release\widget-usage-windows.exe
+cargo build --release   # target\release\claude-codex-taskbar.exe
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the toolchain setup.
@@ -125,8 +127,11 @@ Same app: with the Codex CLI logged in (`codex login`), the strip shows the 5-ho
 **Does it need an API key or my password?**
 No. It reads the login that the official `claude` and `codex` CLIs already saved on your PC, read-only, and talks only to the providers' own endpoints.
 
-**Does it work on Windows 10, macOS or Linux?**
-No. It targets the Windows 11 taskbar (x64). On macOS, menu-bar apps cover the same need (see below).
+**Does it work on Windows 10?**
+Yes. It runs on Windows 11 and Windows 10 (x64).
+
+**Does it work on macOS or Linux?**
+No. It targets the Windows taskbar. On macOS, menu-bar apps cover the same need (see below).
 
 **How much memory and CPU does it use?**
 About 10–20 MB of private memory and near-zero CPU: hardware is sampled once per second through the same performance counters Task Manager uses.
@@ -135,7 +140,7 @@ About 10–20 MB of private memory and near-zero CPU: hardware is sampled once p
 
 | Tool | Platform | What it shows |
 |---|---|---|
-| **claude-codex-taskbar** (this) | Windows 11 taskbar | Claude Code + Codex 5-hour/weekly limits, CPU/RAM/GPU/disk |
+| **claude-codex-taskbar** (this) | Windows 11 / 10 taskbar | Claude Code + Codex 5-hour/weekly limits, CPU/RAM/GPU/disk |
 | [ccusage](https://github.com/ryoppippi/ccusage) | CLI | Claude Code token/cost reports from local logs |
 | [Claude-Code-Usage-Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) | Terminal | Real-time Claude Code token usage and predictions |
 | [ccseva](https://github.com/Iamshankhadeep/ccseva) | macOS menu bar | Claude Code usage tracking |

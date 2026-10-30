@@ -8,7 +8,9 @@ use windows::Win32::System::Registry::{
 use windows::core::HSTRING;
 
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-const VALUE_NAME: &str = "widget-usage-windows";
+const VALUE_NAME: &str = "claude-codex-taskbar";
+/// Run value written by v0.1.x.
+const LEGACY_VALUE_NAME: &str = "widget-usage-windows";
 
 pub fn autostart_value(exe: &Path) -> String {
     format!("\"{}\"", exe.display())
@@ -22,7 +24,7 @@ fn current_exe() -> io::Result<PathBuf> {
     std::env::current_exe()
 }
 
-fn read_value() -> Option<String> {
+fn read_value_named(name: &str) -> Option<String> {
     let mut buf = [0u16; 1024];
     let mut size = (buf.len() * 2) as u32;
     // SAFETY: buf/size describe a valid buffer.
@@ -30,7 +32,7 @@ fn read_value() -> Option<String> {
         RegGetValueW(
             HKEY_CURRENT_USER,
             &HSTRING::from(RUN_KEY),
-            &HSTRING::from(VALUE_NAME),
+            &HSTRING::from(name),
             RRF_RT_REG_SZ,
             None,
             Some(buf.as_mut_ptr().cast()),
@@ -46,7 +48,7 @@ fn read_value() -> Option<String> {
 
 /// True only when the Run entry points at this executable.
 pub fn is_enabled() -> bool {
-    match (read_value(), current_exe()) {
+    match (read_value_named(VALUE_NAME), current_exe()) {
         (Some(value), Ok(exe)) => value_matches(&value, &exe),
         _ => false,
     }
@@ -73,16 +75,27 @@ pub fn enable() -> io::Result<()> {
 }
 
 pub fn disable() -> io::Result<()> {
+    delete_value(VALUE_NAME)
+}
+
+fn delete_value(name: &str) -> io::Result<()> {
     // SAFETY: plain registry call.
     unsafe {
         RegDeleteKeyValueW(
             HKEY_CURRENT_USER,
             &HSTRING::from(RUN_KEY),
-            &HSTRING::from(VALUE_NAME),
+            &HSTRING::from(name),
         )
     }
     .ok()
     .map_err(io::Error::other)
+}
+
+/// If v0.1.x registered "Start with Windows", move that entry to the new name and exe.
+pub fn migrate_legacy() {
+    if read_value_named(LEGACY_VALUE_NAME).is_some() && delete_value(LEGACY_VALUE_NAME).is_ok() {
+        let _ = enable();
+    }
 }
 
 #[cfg(test)]

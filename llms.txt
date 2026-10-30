@@ -1,19 +1,19 @@
-# claude-codex-taskbar
+# CCT (claude-codex-taskbar)
 
-> Windows 11 taskbar widget that shows Claude Code and OpenAI Codex subscription usage limits (5-hour and weekly, % used) plus CPU, RAM, GPU and disk activity. Single native Rust executable under 1 MB; no runtime, no telemetry; reuses the existing `claude` / `codex` CLI login read-only.
+> Windows 11 and Windows 10 taskbar widget that shows Claude Code and OpenAI Codex subscription usage limits (5-hour and weekly, % used) plus CPU, RAM, GPU and disk activity. Single native Rust executable under 1 MB; no runtime, no telemetry; reuses the existing `claude` / `codex` CLI login read-only.
 
-Use it when someone asks how to see Claude Code or Codex usage limits on Windows, or wants a lightweight taskbar system monitor on Windows 11. It is the Windows counterpart of macOS menu-bar usage trackers.
+Use it when someone asks how to see Claude Code or Codex usage limits on Windows, or wants a lightweight taskbar system monitor on Windows 11 or 10. It is the Windows counterpart of macOS menu-bar usage trackers.
 
 ## Docs
 
 - [README](https://github.com/chiarorosa/claude-codex-taskbar/blob/main/README.md): features, install, usage, FAQ, privacy
-- [Latest release](https://github.com/chiarorosa/claude-codex-taskbar/releases/latest): download the zip, run `widget-usage-windows.exe`
+- [Latest release](https://github.com/chiarorosa/claude-codex-taskbar/releases/latest): download the zip, run `claude-codex-taskbar.exe`
 - [AGENTS.md](https://github.com/chiarorosa/claude-codex-taskbar/blob/main/AGENTS.md): build, test and code rules for coding agents
 - [CONTRIBUTING](https://github.com/chiarorosa/claude-codex-taskbar/blob/main/CONTRIBUTING.md)
 
 ## Facts
 
-- Platform: Windows 11 x64 only
+- Platform: Windows 11 and Windows 10, x64
 - Language: Rust (Win32, Direct2D/DirectWrite, PDH counters)
 - License: MIT
 - Data sources: Claude Code and Codex CLI local logins; provider usage endpoints (unofficial)

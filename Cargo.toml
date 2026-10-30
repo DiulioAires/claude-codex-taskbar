@@ -1,18 +1,18 @@
 [package]
-name = "widget-usage-windows"
-version = "0.1.0"
+name = "claude-codex-taskbar"
+version = "0.2.0"
 edition = "2024"
-description = "Lightweight Windows 11 taskbar strip showing hardware usage and Claude Code / Codex subscription limits"
+description = "CCT: Windows 10/11 taskbar widget showing Claude Code / Codex usage limits and CPU, RAM, GPU, disk usage"
 license = "MIT"
 readme = "README.md"
 publish = false
 
 [lib]
-name = "widget_usage_windows"
+name = "claude_codex_taskbar"
 path = "src/lib.rs"
 
 [[bin]]
-name = "widget-usage-windows"
+name = "claude-codex-taskbar"
 path = "src/main.rs"
 
 [dependencies]

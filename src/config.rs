@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::{Path, PathBuf};
 
-pub const APP_DIR: &str = "widget-usage-windows";
+pub const APP_DIR: &str = "claude-codex-taskbar";
+/// Folder used by v0.1.x, migrated once at startup.
+pub const LEGACY_APP_DIR: &str = "widget-usage-windows";
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 #[serde(default)]
@@ -99,7 +101,7 @@ pub fn item_key(id: &ItemId) -> String {
     }
 }
 
-/// `%APPDATA%\widget-usage-windows\config.json`.
+/// `%APPDATA%\claude-codex-taskbar\config.json`.
 pub fn default_path() -> PathBuf {
     let base = std::env::var_os("APPDATA")
         .map(PathBuf::from)
