@@ -6,7 +6,7 @@ use super::view::setup_hints;
 use crate::autostart;
 use crate::config::Config;
 use crate::hw::DiskReading;
-use crate::i18n::{Key, Lang, t};
+use crate::i18n::{Key, Lang, fmt, t};
 use crate::limits::Provider;
 use crate::model::ItemId;
 use std::cell::RefCell;
@@ -43,7 +43,8 @@ enum Toggle {
     Codex,
     Item(ItemId),
     Autostart,
-    KeepAlive,
+    KeepAliveClaude,
+    KeepAliveCodex,
 }
 
 struct State {
@@ -286,9 +287,14 @@ fn create(parent: HWND, cfg: Config, disks: &[DiskReading], lang: Lang, hints: &
             b.check(&format!("Codex — {codex_login}"), cfg.codex_enabled),
         ));
 
+        let keep = t(lang, Key::KeepAliveSetting);
         checks.push((
-            Toggle::KeepAlive,
-            b.check(t(lang, Key::KeepAliveSetting), cfg.keep_claude_login),
+            Toggle::KeepAliveClaude,
+            b.check(&fmt(keep, "Claude Code"), cfg.keep_claude_login),
+        ));
+        checks.push((
+            Toggle::KeepAliveCodex,
+            b.check(&fmt(keep, "Codex"), cfg.keep_codex_login),
         ));
 
         b.header(t(lang, Key::SettingsItems));
@@ -409,9 +415,13 @@ fn apply() {
                 Toggle::Codex => cfg.codex_enabled = on,
                 Toggle::Item(id) => cfg.set_visible(id, on),
                 Toggle::Autostart => autostart_on = Some(on),
-                Toggle::KeepAlive => {
+                Toggle::KeepAliveClaude => {
                     cfg.keep_claude_login = on;
                     cfg.keepalive_asked = true;
+                }
+                Toggle::KeepAliveCodex => {
+                    cfg.keep_codex_login = on;
+                    cfg.codex_keepalive_asked = true;
                 }
             }
         }

@@ -159,28 +159,20 @@ pub fn t(lang: Lang, key: Key) -> &'static str {
         ),
         Key::SettingsWeekSuffix => ("weekly", "semanal"),
         Key::KeepAliveSetting => (
-            "Keep Claude login active (experimental)",
-            "Manter login do Claude ativo (experimental)",
+            "Keep {} login active (experimental)",
+            "Manter login do {} ativo (experimental)",
         ),
         Key::KeepAlivePromptBody => (
-            "Your Claude Code login expires after about 8 hours without use, and the strip then shows —.
-
-Keep it active? When it expires, the app runs `claude auth status` in the background (no prompt is sent, no quota is used) so Claude Code renews its own login.
-
-You can change this later in Settings.",
-            "O login do Claude Code expira depois de cerca de 8 horas sem uso, e a faixa passa a mostrar —.
-
-Manter ativo? Quando expirar, o app roda `claude auth status` em segundo plano (nenhuma mensagem é enviada, não gasta cota) para o próprio Claude Code renovar o login.
-
-Você pode mudar isso depois nas Configurações.",
+            "Logins for {} can expire when the CLI is not used for a while (Claude Code: about 8 hours), and the strip then shows —.\n\nKeep them active? When a login expires, the app runs the CLI's own status command in the background (`claude auth status` / `codex login status`: no prompt is sent, no quota is used) so the CLI renews its own login.\n\nExperimental. You can change this later in Settings.",
+            "O login de {} pode expirar quando a CLI fica um tempo sem uso (Claude Code: cerca de 8 horas), e a faixa passa a mostrar —.\n\nManter ativo? Quando expirar, o app roda o comando de status da própria CLI em segundo plano (`claude auth status` / `codex login status`: nenhuma mensagem é enviada, não gasta cota) para a própria CLI renovar o login.\n\nExperimental. Você pode mudar isso depois nas Configurações.",
         ),
         Key::KeepAliveRenewedFmt => (
-            "Login renewed via `claude auth status` at {}",
-            "Login renovado via `claude auth status` às {}",
+            "Login renewed by the CLI at {}",
+            "Login renovado pela CLI às {}",
         ),
         Key::KeepAliveTriedFmt => (
-            "Ran `claude auth status` at {}; login still expired",
-            "`claude auth status` rodou às {}; login continua expirado",
+            "CLI status check ran at {}; login still expired",
+            "Verificação da CLI rodou às {}; login continua expirado",
         ),
         Key::Ok => ("OK", "OK"),
         Key::Cancel => ("Cancel", "Cancelar"),

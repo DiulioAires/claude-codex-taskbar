@@ -13,7 +13,7 @@ use crate::i18n::{Key, fmt, t};
 use crate::i18n::{Lang, detect_lang};
 use crate::limits::claude::ClaudeProvider;
 use crate::limits::codex::CodexProvider;
-use crate::limits::keepalive::{KeepAlive, Outcome, run_claude_auth_status};
+use crate::limits::keepalive::{KeepAlive, Outcome, invitation_kinds, run_login_status};
 use crate::limits::state::{STALE_SECS, age_status, next_status};
 use crate::limits::worker::{Control, Fetcher, LimitResult, spawn_queued};
 use crate::limits::{Provider, ProviderStatus};
@@ -56,7 +56,8 @@ pub struct App {
     light: bool,
     pub shown: bool,
     inbox: Option<Receiver<LimitResult>>,
-    keepalive: KeepAlive,
+    keepalive_claude: KeepAlive,
+    keepalive_codex: KeepAlive,
 }
 
 fn light_theme() -> bool {
@@ -137,7 +138,8 @@ impl App {
             light: light_theme(),
             shown: false,
             inbox: None,
-            keepalive: KeepAlive::default(),
+            keepalive_claude: KeepAlive::default(),
+            keepalive_codex: KeepAlive::default(),
             cfg,
             cfg_path,
         };
@@ -191,39 +193,75 @@ impl App {
             Ok((usage, false, at)) => next_status(status, Ok(usage), at),
             Err(err) => next_status(status, Err(err), now),
         };
-        if r.kind == Kind::Claude {
-            self.keep_claude_login_active(now);
+        self.keep_login_active(r.kind, now);
+    }
+
+    fn keepalive_of(&mut self, kind: Kind) -> Option<(bool, &ProviderStatus, &mut KeepAlive)> {
+        match kind {
+            Kind::Claude => Some((
+                self.cfg.keep_claude_login,
+                &self.claude,
+                &mut self.keepalive_claude,
+            )),
+            Kind::Codex => Some((
+                self.cfg.keep_codex_login,
+                &self.codex,
+                &mut self.keepalive_codex,
+            )),
+            Kind::Hardware => None,
         }
     }
 
-    /// Opt-in: once the Claude token has expired, let the official CLI renew it.
-    fn keep_claude_login_active(&mut self, now: i64) {
-        self.keepalive.observe(&self.claude, now);
-        if !self
-            .keepalive
-            .should_run(self.cfg.keep_claude_login, &self.claude, now)
-        {
+    /// Opt-in: once a provider's token has expired, let its official CLI renew it.
+    fn keep_login_active(&mut self, kind: Kind, now: i64) {
+        let Some((enabled, status, keepalive)) = self.keepalive_of(kind) else {
+            return;
+        };
+        keepalive.observe(status, now);
+        if !keepalive.should_run(enabled, status, now) {
             return;
         }
-        self.keepalive.started(now);
+        keepalive.started(now);
         let control = self.control.clone();
         std::thread::spawn(move || {
-            run_claude_auth_status();
+            run_login_status(kind);
             // Re-read the credentials right away to see whether the CLI renewed them.
             control.wake();
         });
     }
 
-    /// First-run invitation for the opt-in keep-alive; `None` when not applicable.
-    pub fn keepalive_prompt(&self) -> Option<&'static str> {
-        (!self.cfg.keepalive_asked && claude_provider().has_login())
-            .then(|| t(self.lang, Key::KeepAlivePromptBody))
+    /// First-run invitation for the opt-in keep-alive: the message and the providers it
+    /// covers, or `None` when every logged-in provider was already asked.
+    pub fn keepalive_prompt(&self) -> Option<(String, Vec<Kind>)> {
+        let kinds = invitation_kinds(
+            self.cfg.keepalive_asked,
+            self.cfg.codex_keepalive_asked,
+            claude_provider().has_login(),
+            codex_provider().has_login(),
+        );
+        if kinds.is_empty() {
+            return None;
+        }
+        let names: Vec<&str> = kinds.iter().map(|k| provider_name(*k)).collect();
+        let body = fmt(t(self.lang, Key::KeepAlivePromptBody), &names.join(" / "));
+        Some((body, kinds))
     }
 
-    pub fn answer_keepalive_prompt(&mut self, enable: bool) {
+    pub fn answer_keepalive_prompt(&mut self, kinds: &[Kind], enable: bool) {
         let mut cfg = self.cfg.clone();
-        cfg.keepalive_asked = true;
-        cfg.keep_claude_login = enable;
+        for kind in kinds {
+            match kind {
+                Kind::Claude => {
+                    cfg.keepalive_asked = true;
+                    cfg.keep_claude_login = enable;
+                }
+                Kind::Codex => {
+                    cfg.codex_keepalive_asked = true;
+                    cfg.keep_codex_login = enable;
+                }
+                Kind::Hardware => {}
+            }
+        }
         self.apply_config(cfg);
     }
 
@@ -339,32 +377,44 @@ impl App {
         let (claude, codex) = self.displayed_statuses();
         let text = tooltip_text(self.lang, &claude, &codex, &hidden, left, widgets);
         let mut text = text;
-        if self.cfg.keep_claude_login && claude != ProviderStatus::Disabled {
-            let line = match self.keepalive.outcome() {
-                Outcome::Renewed { at } => fmt(
-                    t(self.lang, Key::KeepAliveRenewedFmt),
-                    &format_local_hhmm(at),
-                ),
-                Outcome::StillExpired { tried_at } => fmt(
-                    t(self.lang, Key::KeepAliveTriedFmt),
-                    &format_local_hhmm(tried_at),
-                ),
-                Outcome::None => String::new(),
-            };
-            if !line.is_empty() {
-                text.push_str(
-                    "
-
-",
-                );
-                text.push_str(&line);
+        for (kind, enabled, status, keepalive) in [
+            (
+                Kind::Claude,
+                self.cfg.keep_claude_login,
+                &claude,
+                &self.keepalive_claude,
+            ),
+            (
+                Kind::Codex,
+                self.cfg.keep_codex_login,
+                &codex,
+                &self.keepalive_codex,
+            ),
+        ] {
+            if !enabled || *status == ProviderStatus::Disabled {
+                continue;
             }
+            let (key, when) = match keepalive.outcome() {
+                Outcome::Renewed { at } => (Key::KeepAliveRenewedFmt, at),
+                Outcome::StillExpired { tried_at } => (Key::KeepAliveTriedFmt, tried_at),
+                Outcome::None => continue,
+            };
+            let line = fmt(t(self.lang, key), &format_local_hhmm(when));
+            text.push_str(&format!("\n\n{}: {line}", provider_name(kind)));
         }
         if text.is_empty() {
             "Taskbar Usage".into()
         } else {
             text
         }
+    }
+}
+
+pub(crate) fn provider_name(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Claude => "Claude Code",
+        Kind::Codex => "Codex",
+        Kind::Hardware => "",
     }
 }
 

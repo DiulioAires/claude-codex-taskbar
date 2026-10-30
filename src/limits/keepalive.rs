@@ -1,8 +1,9 @@
-//! Opt-in "keep Claude login active": when the token has expired, run the official CLI
-//! (`claude auth status`, which sends no prompt) so the CLI itself renews its own login.
-//! This app still never writes the credentials file.
+//! Opt-in "keep login active": when a provider's token has expired, run the official CLI's
+//! status command (`claude auth status`, `codex login status`; neither sends a prompt) so
+//! the CLI itself renews its own login. This app still never writes credentials files.
 
 use super::{FetchError, ProviderStatus};
+use crate::model::Kind;
 use std::os::windows::process::CommandExt;
 use std::process::{Command, Stdio};
 
@@ -33,9 +34,9 @@ impl Default for KeepAlive {
 }
 
 impl KeepAlive {
-    pub fn should_run(&self, enabled: bool, claude: &ProviderStatus, now: i64) -> bool {
+    pub fn should_run(&self, enabled: bool, status: &ProviderStatus, now: i64) -> bool {
         enabled
-            && *claude == ProviderStatus::Failed(FetchError::Expired)
+            && *status == ProviderStatus::Failed(FetchError::Expired)
             && self
                 .last_attempt
                 .is_none_or(|t| now - t >= MIN_INTERVAL_SECS)
@@ -46,11 +47,11 @@ impl KeepAlive {
     }
 
     /// Tracks whether the login recovered after the last CLI run.
-    pub fn observe(&mut self, claude: &ProviderStatus, now: i64) {
+    pub fn observe(&mut self, status: &ProviderStatus, now: i64) {
         let Some(tried_at) = self.last_attempt else {
             return;
         };
-        match claude {
+        match status {
             ProviderStatus::Ok { .. } if !matches!(self.outcome, Outcome::Renewed { .. }) => {
                 self.outcome = Outcome::Renewed { at: now };
             }
@@ -66,11 +67,40 @@ impl KeepAlive {
     }
 }
 
-/// Runs `claude auth status` hidden and waits for it; `cmd /C` resolves both the native
-/// `claude.exe` and the npm `claude.cmd`. Output is discarded (it contains account details).
-pub fn run_claude_auth_status() -> bool {
+/// The CLI command that checks (and, if needed, renews) a provider's login.
+pub fn status_command(kind: Kind) -> Option<&'static [&'static str]> {
+    match kind {
+        Kind::Claude => Some(&["claude", "auth", "status"]),
+        Kind::Codex => Some(&["codex", "login", "status"]),
+        Kind::Hardware => None,
+    }
+}
+
+/// Providers to offer keep-alive for: logged in and not asked before.
+pub fn invitation_kinds(
+    claude_asked: bool,
+    codex_asked: bool,
+    claude_login: bool,
+    codex_login: bool,
+) -> Vec<Kind> {
+    [
+        (Kind::Claude, !claude_asked && claude_login),
+        (Kind::Codex, !codex_asked && codex_login),
+    ]
+    .into_iter()
+    .filter_map(|(kind, offer)| offer.then_some(kind))
+    .collect()
+}
+
+/// Runs the provider's status command hidden and waits for it; `cmd /C` resolves both native
+/// `.exe` installs and npm `.cmd` shims. Output is discarded (it contains account details).
+pub fn run_login_status(kind: Kind) -> bool {
+    let Some(command) = status_command(kind) else {
+        return false;
+    };
     Command::new("cmd.exe")
-        .args(["/C", "claude", "auth", "status"])
+        .arg("/C")
+        .args(command)
         .creation_flags(CREATE_NO_WINDOW)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -130,6 +160,42 @@ mod live {
     #[test]
     #[ignore = "runs the locally installed Claude Code CLI"]
     fn live_claude_auth_status_runs_hidden() {
-        assert!(super::run_claude_auth_status());
+        assert!(super::run_login_status(crate::model::Kind::Claude));
+    }
+
+    #[test]
+    #[ignore = "runs the locally installed Codex CLI"]
+    fn live_codex_login_status_runs_hidden() {
+        assert!(super::run_login_status(crate::model::Kind::Codex));
+    }
+}
+
+#[cfg(test)]
+mod provider_tests {
+    use super::*;
+    use crate::model::Kind;
+
+    #[test]
+    fn each_provider_uses_its_own_status_command() {
+        assert_eq!(
+            status_command(Kind::Claude),
+            Some(&["claude", "auth", "status"][..])
+        );
+        assert_eq!(
+            status_command(Kind::Codex),
+            Some(&["codex", "login", "status"][..])
+        );
+        assert_eq!(status_command(Kind::Hardware), None);
+    }
+
+    #[test]
+    fn invitation_covers_only_logged_in_providers_not_yet_asked() {
+        assert_eq!(
+            invitation_kinds(false, false, true, true),
+            [Kind::Claude, Kind::Codex]
+        );
+        assert_eq!(invitation_kinds(true, false, true, true), [Kind::Codex]);
+        assert_eq!(invitation_kinds(false, false, false, true), [Kind::Codex]);
+        assert!(invitation_kinds(true, true, true, true).is_empty());
     }
 }

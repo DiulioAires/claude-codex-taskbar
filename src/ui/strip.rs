@@ -415,15 +415,15 @@ pub fn run(app: App) -> i32 {
             super::settings::open(hwnd);
         }
         // One-time opt-in invitation; the app is not borrowed while the modal box runs.
-        if let Some(body) = with_app(|app| app.keepalive_prompt()).flatten() {
-            let body = wide_z(body);
+        if let Some((body, kinds)) = with_app(|app| app.keepalive_prompt()).flatten() {
+            let body = wide_z(&body);
             let answer = MessageBoxW(
                 None,
                 PCWSTR(body.as_ptr()),
                 w!("Taskbar Usage"),
                 MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2 | MB_SETFOREGROUND,
             );
-            with_app(|app| app.answer_keepalive_prompt(answer == IDYES));
+            with_app(|app| app.answer_keepalive_prompt(&kinds, answer == IDYES));
         }
 
         let mut msg = MSG::default();

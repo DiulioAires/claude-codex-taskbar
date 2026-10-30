@@ -21,6 +21,9 @@ pub struct Config {
     pub keep_claude_login: bool,
     /// The user was already asked about `keep_claude_login`.
     pub keepalive_asked: bool,
+    /// Opt-in: run `codex login status` when the Codex login has expired.
+    pub keep_codex_login: bool,
+    pub codex_keepalive_asked: bool,
 }
 
 impl Default for Config {
@@ -34,6 +37,8 @@ impl Default for Config {
             first_run_done: false,
             keep_claude_login: false,
             keepalive_asked: false,
+            keep_codex_login: false,
+            codex_keepalive_asked: false,
         }
     }
 }
@@ -125,6 +130,8 @@ mod tests {
             first_run_done: true,
             keep_claude_login: true,
             keepalive_asked: true,
+            keep_codex_login: true,
+            codex_keepalive_asked: true,
         };
         cfg.save_to(&path).unwrap();
         assert_eq!(Config::load_from(&path), cfg);
@@ -154,6 +161,8 @@ mod tests {
         assert!(!cfg.first_run_done);
         assert!(!cfg.keep_claude_login, "keep-alive is opt-in");
         assert!(!cfg.keepalive_asked);
+        assert!(!cfg.keep_codex_login, "keep-alive is opt-in");
+        assert!(!cfg.codex_keepalive_asked);
     }
 
     #[test]
