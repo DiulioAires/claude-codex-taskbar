@@ -1,6 +1,12 @@
-# widget-usage-windows
+# widget-usage-windows: Claude Code & Codex usage limits on the Windows 11 taskbar
 
-> **Name is provisional.** `widget-usage-windows` is a working name for the repository and app; it may change before the first release.
+[![CI](https://github.com/chiarorosa/widget-usage-windows/actions/workflows/ci.yml/badge.svg)](https://github.com/chiarorosa/widget-usage-windows/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/chiarorosa/widget-usage-windows)](https://github.com/chiarorosa/widget-usage-windows/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/chiarorosa/widget-usage-windows/total)](https://github.com/chiarorosa/widget-usage-windows/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Windows 11](https://img.shields.io/badge/Windows-11-0078D4?logo=windows11)
+
+**A Windows 11 taskbar widget that shows your Claude Code and OpenAI Codex subscription usage (5-hour and weekly limits) next to a CPU, RAM, GPU and disk monitor.** One native `.exe` under 1 MB, written in Rust. No runtime, no telemetry, no login screen: it reuses your existing `claude` / `codex` CLI login.
 
 A tiny, always-visible strip pinned over the **left corner of the Windows 11 taskbar** that shows, at a glance:
 
@@ -107,6 +113,33 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the toolchain setup.
 - This project is **not affiliated with, endorsed by, or sponsored by Anthropic or OpenAI**. "Claude", "Claude Code", "Codex", and related names are trademarks of their respective owners.
 - The subscription-limit data comes from **unofficial, undocumented endpoints** (the same ones the official CLIs use for their own usage/status commands). They **may change or break at any time** without notice. When that happens, the app shows an error state rather than wrong numbers.
 - Use at your own risk, and make sure your usage complies with the terms of service of each provider.
+
+## FAQ
+
+**How do I see my Claude Code usage limits on Windows without opening a terminal?**
+Install this app: the taskbar shows the percentage used of your Claude Code 5-hour session window and weekly limit (the same numbers as `/usage` in Claude Code), updated every 2 minutes. Hover for the reset times.
+
+**How do I check my Codex (ChatGPT plan) rate limits on Windows?**
+Same app: with the Codex CLI logged in (`codex login`), the strip shows the 5-hour and weekly percentages that `/status` reports in Codex.
+
+**Does it need an API key or my password?**
+No. It reads the login that the official `claude` and `codex` CLIs already saved on your PC, read-only, and talks only to the providers' own endpoints.
+
+**Does it work on Windows 10, macOS or Linux?**
+No. It targets the Windows 11 taskbar (x64). On macOS, menu-bar apps cover the same need (see below).
+
+**How much memory and CPU does it use?**
+About 10–20 MB of private memory and near-zero CPU: hardware is sampled once per second through the same performance counters Task Manager uses.
+
+## Alternatives and related tools
+
+| Tool | Platform | What it shows |
+|---|---|---|
+| **widget-usage-windows** (this) | Windows 11 taskbar | Claude Code + Codex 5-hour/weekly limits, CPU/RAM/GPU/disk |
+| [ccusage](https://github.com/ryoppippi/ccusage) | CLI | Claude Code token/cost reports from local logs |
+| [Claude-Code-Usage-Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) | Terminal | Real-time Claude Code token usage and predictions |
+| [ccseva](https://github.com/Iamshankhadeep/ccseva) | macOS menu bar | Claude Code usage tracking |
+| [CodexMonitor (Cocoanetics)](https://github.com/Cocoanetics/CodexMonitor) | macOS menu bar | Codex CLI sessions |
 
 ## Contributing
 
