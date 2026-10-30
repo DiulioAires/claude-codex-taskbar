@@ -1,0 +1,5 @@
+{"timestamp":"2026-10-26T15:50:00.000Z","type":"session_meta","payload":{"id":"FAKE"}}
+{"timestamp":"2026-10-26T15:55:00.000Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"limit_id":"codex","primary":{"used_percent":30.0,"window_minutes":300,"resets_at":1793035631},"secondary":{"used_percent":5.0,"window_minutes":10080,"resets_at":1793622431},"plan_type":"plus"}}}
+this line is not json
+{"timestamp":"2026-10-26T15:56:19.000Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"limit_id":"codex","primary":{"used_percent":44.0,"window_minutes":300,"resets_at":1793035631},"secondary":{"used_percent":7.0,"window_minutes":10080,"resets_at":1793622431},"plan_type":"plus"}}}
+{"timestamp":"2026-10-26T15:57:00.000Z","type":"response_item","payload":{"type":"message"}}
