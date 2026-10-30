@@ -1,0 +1,31 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test
+        run: cargo test
+      - name: Build
+        run: cargo build --release
+      - name: Checksum
+        shell: pwsh
+        run: |
+          Copy-Item target/release/widget-usage-windows.exe .
+          $hash = (Get-FileHash widget-usage-windows.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  widget-usage-windows.exe" | Out-File -Encoding ascii widget-usage-windows.exe.sha256
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            widget-usage-windows.exe
+            widget-usage-windows.exe.sha256

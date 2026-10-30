@@ -9,12 +9,11 @@ A tiny, always-visible strip pinned over the **left corner of the Windows 11 tas
 
 No panel to open, no window to switch to. Just glance at the taskbar.
 
-<!-- TODO: add a screenshot (e.g. docs/images/screenshot.png) once the first build exists. -->
-> **Screenshot coming soon.** Planned look: a compact strip where each item has a small label on top, the value in bold, and a thin progress bar underneath, e.g. `CPU 12%` · `RAM 48%` · `GPU 5%` · `C: 3%` | `Claude 5h 62%` · `wk 31%` | `Codex 5h 20%` · `wk 9%`.
+![The strip on the left corner of the Windows 11 taskbar](docs/screenshot.png)
 
 ## Status
 
-**Early development / design phase.** There is no runnable build yet. The current design (written in Portuguese) lives in [`docs/superpowers/specs/`](docs/superpowers/specs/). Feedback on the design is welcome via issues.
+**Early development (v0.1).** The strip, the hardware and limit readings, the tooltip, the menu, and the settings window work. Expect rough edges; bug reports are very welcome. The design (written in Portuguese) lives in [`docs/superpowers/specs/`](docs/superpowers/specs/).
 
 ## Why
 
@@ -27,7 +26,7 @@ Know, without interrupting your work, whether your PC is under load and how much
 - **Native**: written in Rust using raw Win32 via the [`windows`](https://crates.io/crates/windows) crate, drawn with Direct2D/DirectWrite.
 - **Honest numbers**: an expired token or a broken endpoint shows a clear error state, never a fake `0%` or silently stale data.
 
-## Planned features
+## Features
 
 - **Hardware items**: CPU, RAM, GPU (busiest engine, like Task Manager), and per-disk active time (one item per physical disk, labeled with its drive letters).
 - **Subscription limits**:
@@ -52,14 +51,37 @@ Know, without interrupting your work, whether your PC is under load and how much
 - No administrator privileges required.
 - For the limits items: a logged-in [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and/or Codex CLI on the same Windows user account.
 
-## Installation (planned)
+## Installation
 
-Nothing to install yet. The plan is:
+1. Download `widget-usage-windows.exe` from the [latest release](../../releases/latest). It is a single file (under 1 MB): no installer, no runtime dependencies.
+2. Put it somewhere permanent (for example `%LOCALAPPDATA%\Programs\widget-usage-windows\`) and run it.
+3. Right-click the strip → **Start with Windows** to launch it at sign-in (stored under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`).
 
-1. **GitHub Releases**: download a single `.exe` and run it. No installer, no runtime dependencies (the CRT is statically linked).
-2. **winget**: a package will follow after the first stable releases.
+A `winget` package will follow after the first stable releases.
 
-Use **Start with Windows** in the right-click menu to launch it at sign-in (stored under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`).
+### "Windows protected your PC" (SmartScreen)
+
+Release builds are not code-signed yet, so SmartScreen may warn about an unrecognized app. Click **More info → Run anyway**. To make sure the file is the one published here, compare its hash with the `.sha256` file attached to the release:
+
+```powershell
+Get-FileHash .\widget-usage-windows.exe -Algorithm SHA256
+```
+
+### Building from source
+
+```powershell
+cargo build --release   # target\release\widget-usage-windows.exe
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the toolchain setup.
+
+## Usage
+
+- **Free the left corner.** The strip lives where the Windows Widgets (weather) button sits. Turn that button off in *Settings → Personalization → Taskbar → Widgets*. Keep the taskbar icons **centered** (*Taskbar behaviors → Taskbar alignment*); with left-aligned icons there is no room and the strip stays hidden.
+- **Not enough room?** The strip first drops the labels (compact mode), then hides items from the end and shows `…`. Hover to see what was cut, or turn items off in **Settings**.
+- **Toggle providers and items** in **Settings** (right-click → Settings). On first run, Claude and Codex are enabled automatically if their CLI login is found.
+- **Claude shows `—` after a few hours?** Claude Code's login token lasts about 8 hours and is renewed only by Claude Code itself. The app never refreshes it (so it can never log the CLI out); open Claude Code and the numbers come back on the next refresh.
+- **Codex offline?** If the endpoint fails, the strip falls back to the last limits the Codex CLI wrote to its session logs, dimmed, as long as that window has not reset yet.
 
 ## Privacy
 
