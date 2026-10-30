@@ -4,6 +4,7 @@ pub mod claude;
 pub mod codex;
 pub mod http;
 pub mod state;
+pub mod worker;
 
 /// Usage of one limit window (5-hour or weekly).
 #[derive(Clone, Debug, PartialEq)]
