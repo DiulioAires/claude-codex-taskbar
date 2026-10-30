@@ -62,7 +62,7 @@ Know, without interrupting your work, whether your PC is under load and how much
 
 ## Installation
 
-1. Download `widget-usage-windows.exe` from the [latest release](../../releases/latest). It is a single file (under 1 MB): no installer, no runtime dependencies.
+1. Download `widget-usage-windows-<version>-x64.zip` from the [latest release](../../releases/latest) and extract it (or grab the bare `widget-usage-windows.exe`). It is a single file (under 1 MB): no installer, no runtime dependencies.
 2. Put it somewhere permanent (for example `%LOCALAPPDATA%\Programs\widget-usage-windows\`) and run it.
 3. Right-click the strip → **Start with Windows** to launch it at sign-in (stored under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`).
 
@@ -70,7 +70,7 @@ A `winget` package will follow after the first stable releases.
 
 ### "Windows protected your PC" (SmartScreen)
 
-Release builds are not code-signed yet, so SmartScreen may warn about an unrecognized app. Click **More info → Run anyway**. To make sure the file is the one published here, compare its hash with the `.sha256` file attached to the release:
+Release builds are not code-signed yet, so SmartScreen may warn about an unrecognized app. Click **More info → Run anyway**. To make sure the file is the one published here, compare its hash with `SHA256SUMS.txt` attached to the release:
 
 ```powershell
 Get-FileHash .\widget-usage-windows.exe -Algorithm SHA256
