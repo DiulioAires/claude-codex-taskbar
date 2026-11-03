@@ -237,3 +237,59 @@ fn release_checks_size_before_packaging() {
     let package = line_index(&text, |l| l == "- name: Package").expect("package step");
     assert!(check < package);
 }
+
+fn release_yml() -> String {
+    fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/workflows/release.yml"))
+        .unwrap()
+}
+
+/// Signed build provenance for the published files (issue #19).
+#[test]
+fn release_attests_exe_and_zip_between_package_and_publish() {
+    let text = release_yml();
+    let attest = line_index(&text, |l| l.starts_with("uses: actions/attest@"))
+        .or_else(|| line_index(&text, |l| l.starts_with("- uses: actions/attest@")))
+        .expect("actions/attest step");
+    let package = line_index(&text, |l| l == "- name: Package").unwrap();
+    let publish = line_index(&text, |l| l == "- name: Publish").unwrap();
+    assert!(package < attest && attest < publish);
+    let lines: Vec<&str> = text.lines().map(str::trim).collect();
+    assert!(lines.contains(&"dist/claude-codex-taskbar.exe"));
+    assert!(lines.contains(&"dist/*.zip"));
+}
+
+#[test]
+fn release_has_only_the_permissions_attestation_needs() {
+    let text = release_yml();
+    for p in ["contents: write", "id-token: write", "attestations: write"] {
+        assert!(
+            text.lines().any(|l| l.trim() == p),
+            "release.yml needs `{p}`"
+        );
+    }
+    assert!(!text.contains("artifact-metadata"));
+    assert!(
+        text.lines()
+            .any(|l| l.trim() == "create-storage-record: false")
+    );
+}
+
+#[test]
+fn ci_cannot_mint_signing_tokens() {
+    let ci =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/workflows/ci.yml"))
+            .unwrap();
+    assert!(!ci.contains("id-token"));
+    assert!(!ci.contains("attestations"));
+}
+
+#[test]
+fn docs_explain_attestation_verification() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let cmd =
+        "gh attestation verify claude-codex-taskbar.exe --repo chiarorosa/claude-codex-taskbar";
+    for doc in ["README.md", "SECURITY.md"] {
+        let text = fs::read_to_string(root.join(doc)).unwrap();
+        assert!(text.contains(cmd), "{doc} must show `{cmd}`");
+    }
+}

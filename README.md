@@ -84,6 +84,16 @@ Release builds are not code-signed yet, so SmartScreen may warn about an unrecog
 Get-FileHash .\claude-codex-taskbar.exe -Algorithm SHA256
 ```
 
+To also check that it was **built by this repository's release workflow** (not just that it
+matches the checksum file), verify its signed build provenance with the
+[GitHub CLI](https://cli.github.com/):
+
+```powershell
+gh attestation verify claude-codex-taskbar.exe --repo chiarorosa/claude-codex-taskbar
+```
+
+The same works for the `.zip`. Releases before v0.2.1 have no attestations.
+
 ### Building from source
 
 ```powershell
