@@ -1,4 +1,4 @@
-# Proposes SHA bumps for the pinned Actions (issue #8).
+# Proposes SHA bumps for the pinned Actions (issue #8) and Cargo dependency updates.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
@@ -8,3 +8,16 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  # CI (--locked, clippy, tests, 1 MB size budget) validates every bump.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      # Minor/patch bumps in one PR. `windows` is a 0.x crate whose "minor" bumps break the
+      # API, so it always gets its own PR, as do real major bumps.
+      cargo:
+        patterns: ["*"]
+        exclude-patterns: ["windows", "windows-*"]
+        update-types: ["minor", "patch"]

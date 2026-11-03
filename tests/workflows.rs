@@ -293,3 +293,20 @@ fn docs_explain_attestation_verification() {
         assert!(text.contains(cmd), "{doc} must show `{cmd}`");
     }
 }
+
+/// Cargo dependencies get update PRs too. Minor and patch bumps are grouped, but the `windows`
+/// crate (a 0.x crate whose "minor" bumps break the API) and real majors come one per PR.
+#[test]
+fn dependabot_updates_cargo_with_windows_kept_separate() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/dependabot.yml");
+    let text = fs::read_to_string(path).unwrap();
+    let cargo = text
+        .split("- package-ecosystem:")
+        .find(|block| block.trim_start().starts_with("\"cargo\""))
+        .expect("a cargo ecosystem entry");
+    let lines: Vec<&str> = cargo.lines().map(str::trim).collect();
+    assert!(lines.contains(&"directory: \"/\""));
+    assert!(lines.contains(&"interval: \"monthly\""));
+    assert!(lines.contains(&"update-types: [\"minor\", \"patch\"]"));
+    assert!(lines.contains(&"exclude-patterns: [\"windows\", \"windows-*\"]"));
+}
