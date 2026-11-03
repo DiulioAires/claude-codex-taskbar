@@ -4,8 +4,11 @@
 
 use super::{FetchError, ProviderStatus};
 use crate::model::Kind;
+use std::ffi::OsString;
 use std::os::windows::process::CommandExt;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use windows::Win32::System::SystemInformation::GetSystemDirectoryW;
 
 /// Minimum spacing between CLI runs.
 pub const MIN_INTERVAL_SECS: i64 = 15 * 60;
@@ -92,15 +95,70 @@ pub fn invitation_kinds(
     .collect()
 }
 
-/// Runs the provider's status command hidden and waits for it; `cmd /C` resolves both native
-/// `.exe` installs and npm `.cmd` shims. Output is discarded (it contains account details).
+/// Finds `name.exe`, then `name.cmd`, in each directory in order and returns the first match.
+///
+/// Only absolute directories are searched: an empty `PATH` entry, `.`, or a relative,
+/// root-relative (`\tools`) or drive-relative (`C:tools`) entry would resolve against the
+/// current directory, where a planted `claude.cmd` could otherwise be picked up.
+pub fn resolve_cli(
+    name: &str,
+    dirs: &[PathBuf],
+    exists: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    dirs.iter()
+        .filter(|dir| dir.is_absolute())
+        .flat_map(|dir| ["exe", "cmd"].map(|ext| dir.join(format!("{name}.{ext}"))))
+        .find(|path| exists(path))
+}
+
+/// Directories to search for a provider's CLI: its known install locations (native installer,
+/// then the npm global shim), followed by `PATH`. Unset variables are skipped.
+pub fn candidate_dirs(kind: Kind, env: impl Fn(&str) -> Option<OsString>) -> Vec<PathBuf> {
+    let native = match kind {
+        Kind::Claude => env("USERPROFILE").map(|d| PathBuf::from(d).join(r".local\bin")),
+        Kind::Codex => {
+            env("LOCALAPPDATA").map(|d| PathBuf::from(d).join(r"Programs\OpenAI\Codex\bin"))
+        }
+        Kind::Hardware => None,
+    };
+    let npm = env("APPDATA").map(|d| PathBuf::from(d).join("npm"));
+    let path = env("PATH")
+        .map(|p| std::env::split_paths(&p).collect::<Vec<_>>())
+        .unwrap_or_default();
+    native.into_iter().chain(npm).chain(path).collect()
+}
+
+/// The status command for an already resolved CLI, run from a trusted directory.
+///
+/// A `.cmd` shim is not wrapped by hand: for batch files the standard library runs
+/// `<GetSystemDirectoryW>\cmd.exe /e:ON /v:OFF /d /c` with the script path quoted and the
+/// arguments escaped, so `cmd.exe` comes from System32 and registry `AutoRun` is skipped.
+fn login_command(cli: &Path, args: &[&str], cwd: &Path) -> Command {
+    let mut command = Command::new(cli);
+    command.args(args).current_dir(cwd);
+    command
+}
+
+/// `C:\Windows\System32`: not writable by the user, so a safe working directory.
+fn system_dir() -> Option<PathBuf> {
+    let mut buf = [0u16; 260];
+    // SAFETY: the buffer is valid for its whole length; the call writes at most that much.
+    let len = unsafe { GetSystemDirectoryW(Some(&mut buf)) } as usize;
+    (len > 0 && len < buf.len()).then(|| PathBuf::from(String::from_utf16_lossy(&buf[..len])))
+}
+
+/// Runs the provider's status command hidden and waits for it. The CLI is resolved to an
+/// absolute path first; if it cannot be found, keep-alive is skipped. Output is discarded (it
+/// contains account details).
 pub fn run_login_status(kind: Kind) -> bool {
-    let Some(command) = status_command(kind) else {
+    let Some((name, args)) = status_command(kind).and_then(|c| c.split_first()) else {
         return false;
     };
-    Command::new("cmd.exe")
-        .arg("/C")
-        .args(command)
+    let dirs = candidate_dirs(kind, |k| std::env::var_os(k));
+    let (Some(cli), Some(cwd)) = (resolve_cli(name, &dirs, Path::is_file), system_dir()) else {
+        return false;
+    };
+    login_command(&cli, args, &cwd)
         .creation_flags(CREATE_NO_WINDOW)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -197,5 +255,198 @@ mod provider_tests {
         assert_eq!(invitation_kinds(true, false, true, true), [Kind::Codex]);
         assert_eq!(invitation_kinds(false, false, false, true), [Kind::Codex]);
         assert!(invitation_kinds(true, true, true, true).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use super::*;
+    use crate::model::Kind;
+    use std::collections::HashSet;
+    use std::ffi::OsString;
+    use std::path::{Path, PathBuf};
+
+    fn p(s: &str) -> PathBuf {
+        PathBuf::from(s)
+    }
+
+    /// `exists` backed by a fixed set of files.
+    fn files(list: &[&str]) -> impl Fn(&Path) -> bool {
+        let set: HashSet<PathBuf> = list.iter().map(|s| p(s)).collect();
+        move |path| set.contains(path)
+    }
+
+    #[test]
+    fn resolver_returns_absolute_exe() {
+        let dirs = [p(r"C:\tools")];
+        assert_eq!(
+            resolve_cli("claude", &dirs, files(&[r"C:\tools\claude.exe"])),
+            Some(p(r"C:\tools\claude.exe"))
+        );
+    }
+
+    #[test]
+    fn resolver_prefers_exe_over_cmd_in_same_dir() {
+        let dirs = [p(r"C:\npm")];
+        let exists = files(&[r"C:\npm\claude.cmd", r"C:\npm\claude.exe"]);
+        assert_eq!(
+            resolve_cli("claude", &dirs, exists),
+            Some(p(r"C:\npm\claude.exe"))
+        );
+    }
+
+    #[test]
+    fn resolver_falls_back_to_cmd_shim() {
+        let dirs = [p(r"C:\npm")];
+        assert_eq!(
+            resolve_cli("codex", &dirs, files(&[r"C:\npm\codex.cmd"])),
+            Some(p(r"C:\npm\codex.cmd"))
+        );
+    }
+
+    #[test]
+    fn resolver_keeps_directory_order() {
+        let dirs = [p(r"C:\first"), p(r"C:\second")];
+        let exists = files(&[r"C:\first\claude.cmd", r"C:\second\claude.exe"]);
+        assert_eq!(
+            resolve_cli("claude", &dirs, exists),
+            Some(p(r"C:\first\claude.cmd"))
+        );
+    }
+
+    #[test]
+    fn resolver_ignores_current_and_relative_dirs() {
+        // An empty PATH entry, ".", a relative dir, a root-relative and a drive-relative dir
+        // all resolve against the current directory: never search them.
+        let dirs = [p(""), p("."), p("bin"), p(r"\tools"), p(r"C:tools")];
+        assert_eq!(resolve_cli("claude", &dirs, |_| true), None);
+    }
+
+    #[test]
+    fn resolver_ignores_other_extensions() {
+        let dirs = [p(r"C:\tools")];
+        let exists = files(&[
+            r"C:\tools\claude",
+            r"C:\tools\claude.bat",
+            r"C:\tools\claude.com",
+            r"C:\tools\claude.ps1",
+        ]);
+        assert_eq!(resolve_cli("claude", &dirs, exists), None);
+    }
+
+    #[test]
+    fn resolver_returns_none_when_not_found() {
+        let dirs = [p(r"C:\tools"), p(r"C:\npm")];
+        assert_eq!(resolve_cli("codex", &dirs, files(&[])), None);
+    }
+
+    fn env(vars: &[(&str, &str)]) -> impl Fn(&str) -> Option<OsString> {
+        let vars: Vec<(String, OsString)> = vars
+            .iter()
+            .map(|(k, v)| (k.to_string(), OsString::from(v)))
+            .collect();
+        move |k| vars.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone())
+    }
+
+    #[test]
+    fn claude_known_dirs_come_before_path() {
+        let e = env(&[
+            ("USERPROFILE", r"C:\Users\u"),
+            ("APPDATA", r"C:\Users\u\AppData\Roaming"),
+            ("PATH", r"C:\a;.;C:\b"),
+        ]);
+        assert_eq!(
+            candidate_dirs(Kind::Claude, e),
+            [
+                p(r"C:\Users\u\.local\bin"),
+                p(r"C:\Users\u\AppData\Roaming\npm"),
+                p(r"C:\a"),
+                p("."),
+                p(r"C:\b"),
+            ]
+        );
+    }
+
+    #[test]
+    fn codex_known_dirs_come_before_path() {
+        let e = env(&[
+            ("LOCALAPPDATA", r"C:\Users\u\AppData\Local"),
+            ("APPDATA", r"C:\Users\u\AppData\Roaming"),
+            ("PATH", r"C:\a"),
+        ]);
+        assert_eq!(
+            candidate_dirs(Kind::Codex, e),
+            [
+                p(r"C:\Users\u\AppData\Local\Programs\OpenAI\Codex\bin"),
+                p(r"C:\Users\u\AppData\Roaming\npm"),
+                p(r"C:\a"),
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_env_vars_are_skipped() {
+        assert!(candidate_dirs(Kind::Claude, env(&[])).is_empty());
+        assert_eq!(
+            candidate_dirs(Kind::Codex, env(&[("PATH", r"C:\a")])),
+            [p(r"C:\a")]
+        );
+    }
+
+    #[test]
+    fn login_command_runs_resolved_path_from_trusted_dir() {
+        let cmd = login_command(
+            Path::new(r"C:\npm\claude.cmd"),
+            &["auth", "status"],
+            Path::new(r"C:\Windows\System32"),
+        );
+        assert_eq!(cmd.get_program(), r"C:\npm\claude.cmd");
+        assert_eq!(cmd.get_args().collect::<Vec<_>>(), ["auth", "status"]);
+        assert_eq!(
+            cmd.get_current_dir(),
+            Some(Path::new(r"C:\Windows\System32"))
+        );
+    }
+
+    #[test]
+    fn system_dir_is_absolute_system32() {
+        let dir = system_dir().expect("GetSystemDirectoryW");
+        assert!(dir.is_absolute(), "{dir:?}");
+        assert!(dir.join("cmd.exe").is_file(), "{dir:?}");
+        assert!(dir.ends_with("System32") || dir.ends_with("system32"));
+    }
+
+    /// Real spawn of a `.cmd` shim in a directory whose name needs quoting and contains cmd
+    /// metacharacters: the shim records its working directory and arguments.
+    #[test]
+    fn cmd_shim_runs_with_trusted_dir_and_exact_args() {
+        let base = std::env::temp_dir().join(format!(
+            "cct-keepalive-test-{} a&b ^c (d)",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let shim = base.join("claude.cmd");
+        std::fs::write(
+            &shim,
+            "@echo off\r\n> \"%~dp0out.txt\" echo cwd=%CD%;args=%*\r\n",
+        )
+        .unwrap();
+        let cwd = system_dir().unwrap();
+
+        let status = login_command(&shim, &["auth", "status"], &cwd)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .unwrap();
+        let out = std::fs::read_to_string(base.join("out.txt")).unwrap();
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert!(status.success());
+        assert_eq!(
+            out.trim().to_lowercase(),
+            format!("cwd={};args=auth status", cwd.display()).to_lowercase()
+        );
     }
 }
