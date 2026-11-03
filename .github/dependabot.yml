@@ -1,0 +1,10 @@
+# Proposes SHA bumps for the pinned Actions (issue #8).
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      actions:
+        patterns: ["*"]
