@@ -199,3 +199,41 @@ fn suffixed_tags_publish_as_prerelease() {
         "release.yml must mark suffixed tags as pre-releases"
     );
 }
+
+/// Byte budget behind the README's "under 1 MB" promise (issue #18).
+const SIZE_LIMIT: &str = "$limit = 1000000";
+
+fn line_index(text: &str, pred: impl Fn(&str) -> bool) -> Option<usize> {
+    text.lines().position(|l| pred(l.trim()))
+}
+
+#[test]
+fn binary_size_is_checked_after_the_release_build() {
+    for (path, text) in workflows() {
+        let build = line_index(&text, |l| {
+            l.trim_start_matches("run:").trim() == "cargo build --release --locked"
+        })
+        .unwrap_or_else(|| panic!("{}: no release build", path.display()));
+        let check = line_index(&text, |l| l == "- name: Check binary size")
+            .unwrap_or_else(|| panic!("{}: no size check", path.display()));
+        assert!(
+            check > build,
+            "{}: size check must follow the build",
+            path.display()
+        );
+        assert!(
+            text.lines().any(|l| l.trim() == SIZE_LIMIT),
+            "{}: expected `{SIZE_LIMIT}`",
+            path.display()
+        );
+    }
+}
+
+#[test]
+fn release_checks_size_before_packaging() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/workflows/release.yml");
+    let text = fs::read_to_string(path).unwrap();
+    let check = line_index(&text, |l| l == "- name: Check binary size").expect("size check");
+    let package = line_index(&text, |l| l == "- name: Package").expect("package step");
+    assert!(check < package);
+}

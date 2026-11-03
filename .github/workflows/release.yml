@@ -19,6 +19,19 @@ jobs:
         run: cargo test --locked
       - name: Build
         run: cargo build --release --locked
+      - name: Check binary size
+        shell: pwsh
+        run: |
+          # README promises a single .exe under 1 MB (issue #18).
+          $limit = 1000000
+          $size = (Get-Item target/release/claude-codex-taskbar.exe).Length
+          $line = "claude-codex-taskbar.exe: $size bytes (limit $limit, headroom $($limit - $size))"
+          Write-Output $line
+          if ($env:GITHUB_STEP_SUMMARY) { Add-Content $env:GITHUB_STEP_SUMMARY $line }
+          if ($size -gt $limit) {
+            Write-Output "::error::claude-codex-taskbar.exe is $size bytes, over the $limit-byte budget"
+            exit 1
+          }
       - name: Package
         shell: pwsh
         run: |
