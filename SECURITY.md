@@ -4,7 +4,19 @@ This app reads the login credentials of the Claude Code and Codex CLIs on your m
 
 ## Supported versions
 
-The project is in early development and has no releases yet. Once releases exist, only the **latest release** will receive security fixes.
+The project is in early development. Only the **latest release** receives security fixes.
+
+## Verifying a release
+
+Every release from v0.2.1 on carries a signed build provenance attestation (Sigstore), created by
+the release workflow for `claude-codex-taskbar.exe` and the `.zip`. Check that a download was built
+from this repository with the [GitHub CLI](https://cli.github.com/):
+
+```powershell
+gh attestation verify claude-codex-taskbar.exe --repo chiarorosa/claude-codex-taskbar
+```
+
+`SHA256SUMS.txt` is still attached to each release for a quick integrity check.
 
 ## Reporting a vulnerability
 
