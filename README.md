@@ -77,9 +77,13 @@ Know, without interrupting your work, whether your PC is under load and how much
 
 **winget:** the package has passed Microsoft's automated validation and is awaiting moderator review ([microsoft/winget-pkgs#470599](https://github.com/microsoft/winget-pkgs/pull/470599)). Once it is approved, you will be able to install with `winget install cct`.
 
+### Code signing
+
+CCT has applied to the [SignPath Foundation](https://signpath.org/) program for open-source projects (#36). Once approved, release executables will be signed: free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). See the [code signing policy](CODE_SIGNING.md).
+
 ### "Windows protected your PC" (SmartScreen)
 
-Release builds are not code-signed yet (planned in #36), so SmartScreen may warn about an unrecognized app. Click **More info → Run anyway**. To make sure the file is the one published here, compare its hash with `SHA256SUMS.txt` attached to the release:
+Release builds are not code-signed yet, so SmartScreen may warn about an unrecognized app. Click **More info → Run anyway**. To make sure the file is the one published here, compare its hash with `SHA256SUMS.txt` attached to the release:
 
 ```powershell
 Get-FileHash .\claude-codex-taskbar.exe -Algorithm SHA256
