@@ -1,2 +1,8 @@
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "target-feature=+crt-static"]
+# Static VC runtime (no vcruntime140.dll to install), but the Universal CRT is linked from the
+# copy built into Windows 10/11 instead of being embedded: saves ~90 KB (Microsoft's "hybrid CRT").
+rustflags = [
+    "-C", "target-feature=+crt-static",
+    "-C", "link-arg=/NODEFAULTLIB:libucrt.lib",
+    "-C", "link-arg=/DEFAULTLIB:ucrt.lib",
+]
