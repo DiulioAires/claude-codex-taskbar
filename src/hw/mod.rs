@@ -158,7 +158,10 @@ impl Sampler {
             };
         }
         let cpu = self.cpu.and_then(single_value).map(|v| v.clamp(0.0, 100.0));
-        let gpu = self.gpu.and_then(array_values).map(|s| gpu_max_engine(&s));
+        let gpu = self
+            .gpu
+            .and_then(array_values)
+            .and_then(|s| gpu_max_engine(&s));
         let mut disks: Vec<DiskReading> = self
             .disk
             .and_then(array_values)
