@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 /// Task Manager's GPU %: per-process engine samples summed per engine, then the busiest engine.
 /// Instance names look like `pid_1_luid_0x0_0x1_phys_0_eng_0_engtype_3D`.
-/// \None` when no sample has valid data.`
+/// `None` when no sample has valid data.
 pub fn gpu_max_engine(samples: &[(String, f64)]) -> Option<f32> {
     if samples.is_empty() {
         return None;
@@ -90,6 +90,12 @@ mod tests {
     #[test]
     fn gpu_empty_is_none() {
         assert_eq!(gpu_max_engine(&[]), None);
+    }
+
+    #[test]
+    fn gpu_idle_is_zero() {
+        let samples = [s("pid_1_luid_0x0_0x1_phys_0_eng_0_engtype_3D", 0.0)];
+        assert_eq!(gpu_max_engine(&samples), Some(0.0));
     }
 
     #[test]
