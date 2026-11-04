@@ -54,21 +54,21 @@ fn model_tooltip_shows_weekly_limits_and_localized_reset() {
             "Opus wk",
             "Sonnet wk",
             "Extra usage enabled",
-            "resets in 1h 12m",
+            "in 1h 12m",
         ),
         (
             Lang::PtBr,
             "Opus sem",
             "Sonnet sem",
             "Uso extra habilitado",
-            "reseta em 1h 12min",
+            "em 1h 12min",
         ),
     ] {
         let tip = claude_tip(lang, &status);
         let when = format_local_day_hhmm(1793948399);
         let reset = fmt(t(lang, Key::ResetsFmt), &when);
         assert!(
-            tip.contains(&format!("\n  {opus}: 72% · {reset} · {countdown}\n")),
+            tip.contains(&format!("\n  {opus}: 72% · {reset} ({countdown})\n")),
             "{tip}"
         );
         assert!(tip.contains(&format!("\n  {sonnet}: 0%\n")), "{tip}");

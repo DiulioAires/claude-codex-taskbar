@@ -132,7 +132,9 @@ fn reset_countdown(lang: Lang, reset: i64, now: i64) -> Option<String> {
     let (hours, minutes) = (minutes / 60, minutes % 60);
     let (key, first, second) = match hours {
         0 => return Some(fmt(t(lang, Key::ResetsInMinutesFmt), &minutes.to_string())),
+        1..=23 if minutes == 0 => (Key::ResetsInHoursOnlyFmt, hours, 0),
         1..=23 => (Key::ResetsInHoursFmt, hours, minutes),
+        _ if hours % 24 == 0 => (Key::ResetsInDaysOnlyFmt, hours / 24, 0),
         _ => (Key::ResetsInDaysFmt, hours / 24, hours % 24),
     };
     let text = fmt(t(lang, key), &first.to_string());
@@ -157,7 +159,7 @@ fn window_line(
         };
         let _ = write!(out, " · {}", fmt(t(lang, Key::ResetsFmt), &when));
         if let Some(countdown) = reset_countdown(lang, reset, now) {
-            let _ = write!(out, " · {countdown}");
+            let _ = write!(out, " ({countdown})");
         }
     }
 }
