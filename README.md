@@ -49,6 +49,7 @@ Know, without interrupting your work, whether your PC is under load and how much
 - **Full screen:** the strip hides while a full-screen app (a YouTube video, a game, a presentation) is on the taskbar's monitor and comes back as soon as you leave full screen. Full screen on another monitor leaves it alone.
 - **Display scaling:** it follows Windows display scaling (100%, 125%, 150%, …) per monitor, and stays sharp after a change.
 - **Light and dark theme:** text and bar colors follow the Windows theme, switching live.
+- **Language:** the interface follows the Windows display language: **English**, or **Brazilian Portuguese** when Windows is in any Portuguese variant. Other languages fall back to English. Want CCT in your language? Translations are welcome, see [`src/i18n.rs`](src/i18n.rs).
 - **Taskbar icons:** it never covers the taskbar icons. When apps open and the centered icons shift, the strip shrinks (compact mode, then `…`).
 - **Auto-hide and Explorer restarts:** it hides together with an auto-hidden taskbar and comes back on its own after Explorer restarts.
 - **Sleep:** after resume it fetches fresh limits right away and never shows old numbers as current.
