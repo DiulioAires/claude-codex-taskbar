@@ -42,6 +42,28 @@ fn model_window(model: ModelKind, minutes: i64) -> (ModelKind, WindowUsage) {
     )
 }
 
+fn retained_tip_expected(lang: Lang, notice: Key) -> String {
+    let at = if notice == Key::SessionDataFmt {
+        format_local_day_hhmm(NOW - 60)
+    } else {
+        format_local_hhmm(NOW - 60)
+    };
+    let five = fmt(t(lang, Key::ResetsFmt), &format_local_hhmm(NOW + 4320));
+    let week = fmt(
+        t(lang, Key::ResetsFmt),
+        &format_local_day_hhmm(NOW + 604_800),
+    );
+    let (label, five_countdown, week_countdown) = match lang {
+        Lang::En => ("wk", "resets in 1h 12m", "resets in 168h 0m"),
+        Lang::PtBr => ("sem", "reseta em 1h 12min", "reseta em 168h 0min"),
+    };
+    let notice = fmt(t(lang, notice), &at);
+    let block = format!(
+        "\n  5h: 0% · {five} · {five_countdown}\n  {label}: 100% · {week} · {week_countdown}\n  {notice}"
+    );
+    format!("Claude{block}\n\nCodex{block}")
+}
+
 #[test]
 fn countdown_rounds_up_minutes_in_both_languages() {
     for &(seconds, en, pt) in DURATIONS {
@@ -175,7 +197,7 @@ fn tooltip_omits_countdown_for_elapsed_resets() {
 
 #[test]
 fn retained_statuses_keep_notices_and_known_future_reset_countdowns() {
-    for (status, en, pt) in [
+    for (status, en, pt, notice) in [
         (
             ProviderStatus::Stale {
                 usage: timed_usage(),
@@ -184,6 +206,7 @@ fn retained_statuses_keep_notices_and_known_future_reset_countdowns() {
             },
             "Update failed; last data at",
             "Falha ao atualizar; último dado às",
+            Key::StaleFmt,
         ),
         (
             ProviderStatus::FromSession {
@@ -192,6 +215,7 @@ fn retained_statuses_keep_notices_and_known_future_reset_countdowns() {
             },
             "(last session)",
             "(última sessão)",
+            Key::SessionDataFmt,
         ),
     ] {
         let tip_en = countdown_tip(Lang::En, &status, NOW);
@@ -204,6 +228,8 @@ fn retained_statuses_keep_notices_and_known_future_reset_countdowns() {
             tip_pt.contains(pt) && tip_pt.contains("reseta em 1h 12min"),
             "{tip_pt}"
         );
+        assert_eq!(tip_en, retained_tip_expected(Lang::En, notice));
+        assert_eq!(tip_pt, retained_tip_expected(Lang::PtBr, notice));
     }
 }
 
