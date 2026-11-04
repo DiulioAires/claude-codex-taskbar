@@ -31,7 +31,15 @@ fn model_usage() -> ProviderUsage {
 }
 
 fn claude_tip(lang: Lang, status: &ProviderStatus) -> String {
-    tooltip_text(lang, status, &ProviderStatus::Disabled, &[], false, false)
+    tooltip_text(
+        lang,
+        status,
+        &ProviderStatus::Disabled,
+        &[],
+        false,
+        false,
+        1793948399 - 4320,
+    )
 }
 
 #[test]
@@ -40,15 +48,27 @@ fn model_tooltip_shows_weekly_limits_and_localized_reset() {
         usage: model_usage(),
         at: 1000,
     };
-    for (lang, opus, sonnet, extra) in [
-        (Lang::En, "Opus wk", "Sonnet wk", "Extra usage enabled"),
-        (Lang::PtBr, "Opus sem", "Sonnet sem", "Uso extra habilitado"),
+    for (lang, opus, sonnet, extra, countdown) in [
+        (
+            Lang::En,
+            "Opus wk",
+            "Sonnet wk",
+            "Extra usage enabled",
+            "in 1h 12m",
+        ),
+        (
+            Lang::PtBr,
+            "Opus sem",
+            "Sonnet sem",
+            "Uso extra habilitado",
+            "em 1h 12min",
+        ),
     ] {
         let tip = claude_tip(lang, &status);
         let when = format_local_day_hhmm(1793948399);
         let reset = fmt(t(lang, Key::ResetsFmt), &when);
         assert!(
-            tip.contains(&format!("\n  {opus}: 72% · {reset}\n")),
+            tip.contains(&format!("\n  {opus}: 72% · {reset} ({countdown})\n")),
             "{tip}"
         );
         assert!(tip.contains(&format!("\n  {sonnet}: 0%\n")), "{tip}");

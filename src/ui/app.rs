@@ -375,7 +375,15 @@ impl App {
             .as_ref()
             .map_or((false, false), |t| (t.left_aligned, t.widgets_button_on));
         let (claude, codex) = self.displayed_statuses();
-        let text = tooltip_text(self.lang, &claude, &codex, &hidden, left, widgets);
+        let text = tooltip_text(
+            self.lang,
+            &claude,
+            &codex,
+            &hidden,
+            left,
+            widgets,
+            now_unix(),
+        );
         let mut text = text;
         for (kind, enabled, status, keepalive) in [
             (
