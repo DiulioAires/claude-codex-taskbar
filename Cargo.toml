@@ -28,7 +28,7 @@ features = ["Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Direct2D"
 embed-resource = "3.0.12"
 
 [profile.release]
-opt-level = "s"
+opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
