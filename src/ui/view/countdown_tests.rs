@@ -6,12 +6,19 @@ const DURATIONS: &[(i64, &str, &str)] = &[
     (59, "1m", "1min"),
     (60, "1m", "1min"),
     (61, "2m", "2min"),
+    (2700, "45m", "45min"),
     (3599, "1h 0m", "1h 0min"),
     (3600, "1h 0m", "1h 0min"),
     (3601, "1h 1m", "1h 1min"),
     (4320, "1h 12m", "1h 12min"),
     (18_000, "5h 0m", "5h 0min"),
-    (604_800, "168h 0m", "168h 0min"),
+    (86_340, "23h 59m", "23h 59min"),
+    (86_399, "1d 0h", "1d 0h"),
+    (86_400, "1d 0h", "1d 0h"),
+    (86_401, "1d 0h", "1d 0h"),
+    (183_600, "2d 3h", "2d 3h"),
+    (183_660, "2d 3h", "2d 3h"),
+    (604_800, "7d 0h", "7d 0h"),
 ];
 
 fn timed_usage() -> ProviderUsage {
@@ -54,8 +61,8 @@ fn retained_tip_expected(lang: Lang, notice: Key) -> String {
         &format_local_day_hhmm(NOW + 604_800),
     );
     let (label, five_countdown, week_countdown) = match lang {
-        Lang::En => ("wk", "resets in 1h 12m", "resets in 168h 0m"),
-        Lang::PtBr => ("sem", "reseta em 1h 12min", "reseta em 168h 0min"),
+        Lang::En => ("wk", "resets in 1h 12m", "resets in 7d 0h"),
+        Lang::PtBr => ("sem", "reseta em 1h 12min", "reseta em 7d 0h"),
     };
     let notice = fmt(t(lang, notice), &at);
     let block = format!(
@@ -95,13 +102,8 @@ fn tooltip_keeps_absolute_times_and_adds_both_provider_countdowns() {
         at: NOW - 60,
     };
     for (lang, week, five, weekly) in [
-        (Lang::En, "wk", "resets in 1h 12m", "resets in 168h 0m"),
-        (
-            Lang::PtBr,
-            "sem",
-            "reseta em 1h 12min",
-            "reseta em 168h 0min",
-        ),
+        (Lang::En, "wk", "resets in 1h 12m", "resets in 7d 0h"),
+        (Lang::PtBr, "sem", "reseta em 1h 12min", "reseta em 7d 0h"),
     ] {
         let tip = countdown_tip(lang, &status, NOW);
         let absolute5 = fmt(t(lang, Key::ResetsFmt), &format_local_hhmm(NOW + 4320));

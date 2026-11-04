@@ -130,11 +130,13 @@ fn reset_countdown(lang: Lang, reset: i64, now: i64) -> Option<String> {
     }
     let minutes = seconds / 60 + i64::from(seconds % 60 != 0);
     let (hours, minutes) = (minutes / 60, minutes % 60);
-    if hours == 0 {
-        return Some(fmt(t(lang, Key::ResetsInMinutesFmt), &minutes.to_string()));
-    }
-    let text = fmt(t(lang, Key::ResetsInHoursFmt), &hours.to_string());
-    Some(fmt(&text, &minutes.to_string()))
+    let (key, first, second) = match hours {
+        0 => return Some(fmt(t(lang, Key::ResetsInMinutesFmt), &minutes.to_string())),
+        1..=23 => (Key::ResetsInHoursFmt, hours, minutes),
+        _ => (Key::ResetsInDaysFmt, hours / 24, hours % 24),
+    };
+    let text = fmt(t(lang, key), &first.to_string());
+    Some(fmt(&text, &second.to_string()))
 }
 
 fn window_line(
