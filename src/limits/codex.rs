@@ -356,6 +356,36 @@ mod tests {
     }
 
     #[test]
+    fn missing_durations_preserve_both_positional_windows() {
+        let api = json!({"rate_limit": {
+            "primary_window": {"used_percent": 12, "reset_at": 1793035631},
+            "secondary_window": {"used_percent": 55, "reset_at": 1793622431}
+        }});
+        let session = r#"{"timestamp":"2026-10-26T15:56:19Z","payload":{"rate_limits":{"primary":{"used_percent":12,"resets_at":1793035631},"secondary":{"used_percent":55,"resets_at":1793622431}}}}"#;
+        let api = parse_codex_usage(&api, 0).unwrap();
+        let (session, _) = session_line_limits(session).unwrap();
+        assert_eq!(api, session);
+        let five = api.five_hour.unwrap();
+        let week = api.weekly.unwrap();
+        assert_eq!(five.used_pct, 12.0);
+        assert_eq!(five.resets_at, Some(1793035631));
+        assert_eq!(week.used_pct, 55.0);
+        assert_eq!(week.resets_at, Some(1793622431));
+    }
+
+    #[test]
+    fn session_window_duration_overrides_position() {
+        let line = r#"{"timestamp":"2026-10-26T15:56:19Z","payload":{"rate_limits":{"primary":{"used_percent":55,"window_minutes":10080,"resets_at":1793622431},"secondary":{"used_percent":12,"window_minutes":300,"resets_at":1793035631}}}}"#;
+        let (usage, _) = session_line_limits(line).unwrap();
+        let five = usage.five_hour.unwrap();
+        let week = usage.weekly.unwrap();
+        assert_eq!(five.used_pct, 12.0);
+        assert_eq!(five.resets_at, Some(1793035631));
+        assert_eq!(week.used_pct, 55.0);
+        assert_eq!(week.resets_at, Some(1793622431));
+    }
+
+    #[test]
     fn usage_reset_after_seconds() {
         let v = json!({"rate_limit": {"primary_window": {"used_percent": 5, "reset_after_seconds": 600}}});
         let u = parse_codex_usage(&v, 1000).unwrap();
