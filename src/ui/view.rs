@@ -3,7 +3,7 @@
 use crate::config::Config;
 use crate::hw::HwSnapshot;
 use crate::i18n::{Key, Lang, fmt, t};
-use crate::limits::{FetchError, ProviderStatus, ProviderUsage, WindowUsage};
+use crate::limits::{FetchError, ModelKind, ProviderStatus, ProviderUsage, WindowUsage};
 use crate::model::{ItemId, Kind};
 use crate::timeutil::{format_local_day_hhmm, format_local_hhmm};
 use std::fmt::Write;
@@ -122,7 +122,7 @@ fn error_message(lang: Lang, kind: Kind, err: &FetchError) -> String {
     t(lang, key).into()
 }
 
-fn window_line(out: &mut String, lang: Lang, label: &str, w: &Option<WindowUsage>, weekly: bool) {
+fn window_line(out: &mut String, lang: Lang, label: &str, w: Option<&WindowUsage>, weekly: bool) {
     let Some(w) = w else { return };
     let _ = write!(out, "\n  {label}: {}", value_text(Some(w.used_pct)));
     if let Some(reset) = w.resets_at {
@@ -135,11 +135,25 @@ fn window_line(out: &mut String, lang: Lang, label: &str, w: &Option<WindowUsage
     }
 }
 
+fn model_usage_lines(out: &mut String, lang: Lang, usage: &ProviderUsage) {
+    for (model, window) in &usage.weekly_by_model {
+        let key = match model {
+            ModelKind::Opus => Key::LabelOpusWeek,
+            ModelKind::Sonnet => Key::LabelSonnetWeek,
+        };
+        window_line(out, lang, t(lang, key), Some(window), true);
+    }
+    if usage.extra_usage_enabled {
+        let _ = write!(out, "\n  {}", t(lang, Key::ExtraUsageEnabled));
+    }
+}
+
 fn provider_block(out: &mut String, lang: Lang, name: &str, kind: Kind, status: &ProviderStatus) {
     let week = t(lang, Key::LabelWeek);
     let usage_lines = |out: &mut String, u: &ProviderUsage| {
-        window_line(out, lang, "5h", &u.five_hour, false);
-        window_line(out, lang, week, &u.weekly, true);
+        window_line(out, lang, "5h", u.five_hour.as_ref(), false);
+        window_line(out, lang, week, u.weekly.as_ref(), true);
+        model_usage_lines(out, lang, u);
     };
     if !out.is_empty() {
         out.push_str("\n\n");
@@ -256,6 +270,7 @@ mod tests {
                 used_pct: week,
                 resets_at: None,
             }),
+            ..Default::default()
         }
     }
 
@@ -418,3 +433,6 @@ mod hint_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod claude_tests;

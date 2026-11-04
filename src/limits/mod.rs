@@ -16,10 +16,21 @@ pub struct WindowUsage {
     pub resets_at: Option<i64>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+/// Claude models with independently reported weekly limits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModelKind {
+    Opus,
+    Sonnet,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ProviderUsage {
     pub five_hour: Option<WindowUsage>,
     pub weekly: Option<WindowUsage>,
+    /// Only model windows the provider actually reported, in display order.
+    pub weekly_by_model: Vec<(ModelKind, WindowUsage)>,
+    /// True only when the provider explicitly enables extra usage.
+    pub extra_usage_enabled: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]

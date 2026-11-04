@@ -87,6 +87,7 @@ pub fn parse_codex_usage(v: &Value, now: i64) -> Result<ProviderUsage, FetchErro
     let mut usage = ProviderUsage {
         five_hour: None,
         weekly: None,
+        ..Default::default()
     };
     for (name, secondary) in [("primary_window", false), ("secondary_window", true)] {
         let w = &rl[name];
@@ -114,6 +115,7 @@ fn session_line_limits(line: &str) -> Option<(ProviderUsage, i64)> {
     let mut usage = ProviderUsage {
         five_hour: None,
         weekly: None,
+        ..Default::default()
     };
     for (name, secondary) in [("primary", false), ("secondary", true)] {
         let w = &rl[name];
