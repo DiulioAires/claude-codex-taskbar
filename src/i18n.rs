@@ -115,8 +115,8 @@ pub fn t(lang: Lang, key: Key) -> &'static str {
         Key::MenuAutostart => ("Start with Windows", "Iniciar com o Windows"),
         Key::MenuExit => ("Exit", "Sair"),
         Key::LabelWeek => ("wk", "sem"),
-        Key::LabelOpusWeek => ("Opus week", "Opus semanal"),
-        Key::LabelSonnetWeek => ("Sonnet week", "Sonnet semanal"),
+        Key::LabelOpusWeek => ("Opus wk", "Opus sem"),
+        Key::LabelSonnetWeek => ("Sonnet wk", "Sonnet sem"),
         Key::ExtraUsageEnabled => ("Extra usage enabled", "Uso extra habilitado"),
         Key::ClaudeExpired => (
             "Claude login expired — open Claude Code to renew",

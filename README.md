@@ -36,7 +36,7 @@ Know, without interrupting your work, whether your PC is under load and how much
 
 - **Hardware items**: CPU, RAM, GPU (busiest engine, like Task Manager), and per-disk active time (one item per physical disk, labeled with its drive letters).
 - **Subscription limits**:
-  - **Claude Code**: 5-hour and weekly usage, using your existing `claude` CLI login. Hover for available Opus/Sonnet weekly limits and extra-usage status; see [Claude usage details](docs/claude-usage.md).
+  - **Claude Code**: 5-hour and weekly usage, using your existing `claude` CLI login. Hover for reported Opus/Sonnet weekly percentages and their local reset times, plus an extra-usage notice when enabled. Missing model readings are omitted, real `0%` is retained, and expired model windows disappear independently; retained old data keeps its stale notice. These details use the existing response, without additional requests or settings.
   - **Codex**: 5-hour and weekly usage, using your existing `codex` CLI login.
 - **Toggles**: every item and every provider can be turned on or off independently. Disabled items disappear and the strip shrinks.
 - **Color cues**: progress bars turn yellow near the limit and red when close to it.

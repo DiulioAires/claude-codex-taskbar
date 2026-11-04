@@ -41,13 +41,8 @@ fn model_tooltip_shows_weekly_limits_and_localized_reset() {
         at: 1000,
     };
     for (lang, opus, sonnet, extra) in [
-        (Lang::En, "Opus week", "Sonnet week", "Extra usage enabled"),
-        (
-            Lang::PtBr,
-            "Opus semanal",
-            "Sonnet semanal",
-            "Uso extra habilitado",
-        ),
+        (Lang::En, "Opus wk", "Sonnet wk", "Extra usage enabled"),
+        (Lang::PtBr, "Opus sem", "Sonnet sem", "Uso extra habilitado"),
     ] {
         let tip = claude_tip(lang, &status);
         let when = format_local_day_hhmm(1793948399);
@@ -69,7 +64,7 @@ fn model_tooltip_omits_absent_model_and_disabled_extra_usage() {
     let status = ProviderStatus::Ok { usage, at: 1000 };
     let tip = claude_tip(Lang::En, &status);
     assert!(!tip.contains("Opus"));
-    assert!(tip.contains("Sonnet week: 0%"));
+    assert!(tip.contains("Sonnet wk: 0%"));
     assert!(!tip.contains("Extra usage"));
 }
 
@@ -91,8 +86,8 @@ fn model_tooltip_preserves_stale_notice() {
         err: FetchError::Network("timeout".into()),
     };
     let tip = claude_tip(Lang::En, &status);
-    assert!(tip.contains("Opus week: 72%"));
-    assert!(tip.contains("Sonnet week: 0%"));
+    assert!(tip.contains("Opus wk: 72%"));
+    assert!(tip.contains("Sonnet wk: 0%"));
     assert!(tip.contains("Update failed; last data at"));
 }
 
