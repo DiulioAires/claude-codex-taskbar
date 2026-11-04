@@ -53,6 +53,25 @@ fn window(pct: Option<f64>, resets_at: Option<i64>) -> Option<WindowUsage> {
     })
 }
 
+/// Reported duration takes precedence over the legacy primary/secondary ordering.
+fn assign_window(
+    usage: &mut ProviderUsage,
+    reading: Option<WindowUsage>,
+    seconds: Option<i64>,
+    secondary: bool,
+) {
+    let slot = match seconds {
+        Some(18000) => &mut usage.five_hour,
+        Some(604800) => &mut usage.weekly,
+        None if secondary => &mut usage.weekly,
+        None => &mut usage.five_hour,
+        Some(_) => return,
+    };
+    if reading.is_some() {
+        *slot = reading;
+    }
+}
+
 /// `now` resolves the relative `reset_after_seconds` field.
 pub fn parse_codex_usage(v: &Value, now: i64) -> Result<ProviderUsage, FetchError> {
     let rl = v
@@ -65,10 +84,20 @@ pub fn parse_codex_usage(v: &Value, now: i64) -> Result<ProviderUsage, FetchErro
             .or_else(|| w["reset_after_seconds"].as_i64().map(|s| now + s));
         window(w["used_percent"].as_f64(), resets_at)
     };
-    Ok(ProviderUsage {
-        five_hour: parse(&rl["primary_window"]),
-        weekly: parse(&rl["secondary_window"]),
-    })
+    let mut usage = ProviderUsage {
+        five_hour: None,
+        weekly: None,
+    };
+    for (name, secondary) in [("primary_window", false), ("secondary_window", true)] {
+        let w = &rl[name];
+        assign_window(
+            &mut usage,
+            parse(w),
+            w["limit_window_seconds"].as_i64(),
+            secondary,
+        );
+    }
+    Ok(usage)
 }
 
 /// Parses one session-log line; `None` unless it carries `payload.rate_limits`.
@@ -82,13 +111,16 @@ fn session_line_limits(line: &str) -> Option<(ProviderUsage, i64)> {
             .or_else(|| w["resets_in_seconds"].as_i64().map(|s| at + s));
         window(w["used_percent"].as_f64(), resets_at)
     };
-    Some((
-        ProviderUsage {
-            five_hour: parse(&rl["primary"]),
-            weekly: parse(&rl["secondary"]),
-        },
-        at,
-    ))
+    let mut usage = ProviderUsage {
+        five_hour: None,
+        weekly: None,
+    };
+    for (name, secondary) in [("primary", false), ("secondary", true)] {
+        let w = &rl[name];
+        let seconds = w["window_minutes"].as_i64().map(|m| m.saturating_mul(60));
+        assign_window(&mut usage, parse(w), seconds, secondary);
+    }
+    Some((usage, at))
 }
 
 /// Newest-first walk of `sessions/YYYY/MM/DD/*.jsonl`; stops at the first file with limits.
@@ -267,6 +299,58 @@ mod tests {
             Some(WindowUsage {
                 used_pct: 40.0,
                 resets_at: Some(1793972054)
+            })
+        );
+    }
+
+    #[test]
+    fn usage_primary_weekly_is_not_five_hour() {
+        let v = json!({"rate_limit": {
+            "primary_window": {"used_percent": 55, "limit_window_seconds": 604800, "reset_at": 1794267982i64},
+            "secondary_window": null
+        }});
+        let u = parse_codex_usage(&v, 0).unwrap();
+        assert_eq!(u.five_hour, None);
+        assert_eq!(
+            u.weekly,
+            Some(WindowUsage {
+                used_pct: 55.0,
+                resets_at: Some(1794267982)
+            })
+        );
+    }
+
+    #[test]
+    fn usage_window_duration_overrides_position() {
+        let v = json!({"rate_limit": {
+            "primary_window": {"used_percent": 55, "limit_window_seconds": 604800},
+            "secondary_window": {"used_percent": 12, "limit_window_seconds": 18000}
+        }});
+        let u = parse_codex_usage(&v, 0).unwrap();
+        assert_eq!(u.five_hour.unwrap().used_pct, 12.0);
+        assert_eq!(u.weekly.unwrap().used_pct, 55.0);
+    }
+
+    #[test]
+    fn usage_unknown_duration_is_not_mislabeled() {
+        let v = json!({"rate_limit": {
+            "primary_window": {"used_percent": 55, "limit_window_seconds": 3600}
+        }});
+        let u = parse_codex_usage(&v, 0).unwrap();
+        assert_eq!(u.five_hour, None);
+        assert_eq!(u.weekly, None);
+    }
+
+    #[test]
+    fn session_primary_weekly_is_not_five_hour() {
+        let line = r#"{"timestamp":"2026-10-26T15:56:19Z","payload":{"rate_limits":{"primary":{"used_percent":55,"window_minutes":10080,"resets_at":1794267982},"secondary":null}}}"#;
+        let (u, _) = session_line_limits(line).unwrap();
+        assert_eq!(u.five_hour, None);
+        assert_eq!(
+            u.weekly,
+            Some(WindowUsage {
+                used_pct: 55.0,
+                resets_at: Some(1794267982)
             })
         );
     }
