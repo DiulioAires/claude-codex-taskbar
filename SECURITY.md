@@ -8,6 +8,8 @@ The project is in early development. Only the **latest release** receives securi
 
 ## Verifying a release
 
+Code signing of the executable is planned through SignPath Foundation; see [CODE_SIGNING.md](CODE_SIGNING.md).
+
 Every release from v0.2.1 on carries a signed build provenance attestation (Sigstore), created by
 the release workflow for `claude-codex-taskbar.exe` and the `.zip`. Check that a download was built
 from this repository with the [GitHub CLI](https://cli.github.com/):
