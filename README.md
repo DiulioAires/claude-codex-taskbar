@@ -75,11 +75,11 @@ Know, without interrupting your work, whether your PC is under load and how much
 2. Put it somewhere permanent (for example `%LOCALAPPDATA%\Programs\claude-codex-taskbar\`) and run it.
 3. Right-click the strip → **Start with Windows** to launch it at sign-in (stored under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`).
 
-A `winget` package will follow after the first stable releases.
+**winget:** the package has passed Microsoft's automated validation and is awaiting moderator review ([microsoft/winget-pkgs#470599](https://github.com/microsoft/winget-pkgs/pull/470599)). Once it is approved, you will be able to install with `winget install cct`.
 
 ### "Windows protected your PC" (SmartScreen)
 
-Release builds are not code-signed yet, so SmartScreen may warn about an unrecognized app. Click **More info → Run anyway**. To make sure the file is the one published here, compare its hash with `SHA256SUMS.txt` attached to the release:
+Release builds are not code-signed yet (planned in #36), so SmartScreen may warn about an unrecognized app. Click **More info → Run anyway**. To make sure the file is the one published here, compare its hash with `SHA256SUMS.txt` attached to the release:
 
 ```powershell
 Get-FileHash .\claude-codex-taskbar.exe -Algorithm SHA256
