@@ -122,7 +122,29 @@ fn error_message(lang: Lang, kind: Kind, err: &FetchError) -> String {
     t(lang, key).into()
 }
 
-fn window_line(out: &mut String, lang: Lang, label: &str, w: Option<&WindowUsage>, weekly: bool) {
+// Round up so a reset less than a minute away never looks already due (#14).
+fn reset_countdown(lang: Lang, reset: i64, now: i64) -> Option<String> {
+    let seconds = reset.checked_sub(now)?;
+    if seconds <= 0 {
+        return None;
+    }
+    let minutes = seconds / 60 + i64::from(seconds % 60 != 0);
+    let (hours, minutes) = (minutes / 60, minutes % 60);
+    if hours == 0 {
+        return Some(fmt(t(lang, Key::ResetsInMinutesFmt), &minutes.to_string()));
+    }
+    let text = fmt(t(lang, Key::ResetsInHoursFmt), &hours.to_string());
+    Some(fmt(&text, &minutes.to_string()))
+}
+
+fn window_line(
+    out: &mut String,
+    lang: Lang,
+    label: &str,
+    w: Option<&WindowUsage>,
+    weekly: bool,
+    now: i64,
+) {
     let Some(w) = w else { return };
     let _ = write!(out, "\n  {label}: {}", value_text(Some(w.used_pct)));
     if let Some(reset) = w.resets_at {
@@ -132,28 +154,38 @@ fn window_line(out: &mut String, lang: Lang, label: &str, w: Option<&WindowUsage
             format_local_hhmm(reset)
         };
         let _ = write!(out, " · {}", fmt(t(lang, Key::ResetsFmt), &when));
+        if let Some(countdown) = reset_countdown(lang, reset, now) {
+            let _ = write!(out, " · {countdown}");
+        }
     }
 }
 
-fn model_usage_lines(out: &mut String, lang: Lang, usage: &ProviderUsage) {
+fn model_usage_lines(out: &mut String, lang: Lang, usage: &ProviderUsage, now: i64) {
     for (model, window) in &usage.weekly_by_model {
         let key = match model {
             ModelKind::Opus => Key::LabelOpusWeek,
             ModelKind::Sonnet => Key::LabelSonnetWeek,
         };
-        window_line(out, lang, t(lang, key), Some(window), true);
+        window_line(out, lang, t(lang, key), Some(window), true, now);
     }
     if usage.extra_usage_enabled {
         let _ = write!(out, "\n  {}", t(lang, Key::ExtraUsageEnabled));
     }
 }
 
-fn provider_block(out: &mut String, lang: Lang, name: &str, kind: Kind, status: &ProviderStatus) {
+fn provider_block(
+    out: &mut String,
+    lang: Lang,
+    name: &str,
+    kind: Kind,
+    status: &ProviderStatus,
+    now: i64,
+) {
     let week = t(lang, Key::LabelWeek);
     let usage_lines = |out: &mut String, u: &ProviderUsage| {
-        window_line(out, lang, "5h", u.five_hour.as_ref(), false);
-        window_line(out, lang, week, u.weekly.as_ref(), true);
-        model_usage_lines(out, lang, u);
+        window_line(out, lang, "5h", u.five_hour.as_ref(), false, now);
+        window_line(out, lang, week, u.weekly.as_ref(), true, now);
+        model_usage_lines(out, lang, u, now);
     };
     if !out.is_empty() {
         out.push_str("\n\n");
@@ -199,6 +231,7 @@ pub fn tooltip_text(
     hidden: &[ItemView],
     left_aligned: bool,
     widgets_button_on: bool,
+    now: i64,
 ) -> String {
     let mut out = String::new();
     for (name, kind, status) in [
@@ -206,7 +239,7 @@ pub fn tooltip_text(
         ("Codex", Kind::Codex, codex),
     ] {
         if *status != ProviderStatus::Disabled {
-            provider_block(&mut out, lang, name, kind, status);
+            provider_block(&mut out, lang, name, kind, status, now);
         }
     }
     if !hidden.is_empty() {
@@ -350,6 +383,7 @@ mod tests {
             &[],
             false,
             false,
+            0,
         );
         assert!(tip.contains("Claude login expired — open Claude Code to renew"));
         assert!(tip.contains("Log in by running `codex login`"));
@@ -371,6 +405,7 @@ mod tests {
             &hidden,
             true,
             true,
+            0,
         );
         assert!(!tip.contains("Claude"));
         assert!(tip.contains("Not shown (no room):"));
@@ -391,6 +426,7 @@ mod tests {
             &[],
             false,
             false,
+            0,
         );
         assert!(tip.contains("Claude"));
         assert!(tip.contains("5h: 62%"));
@@ -412,6 +448,7 @@ mod aging_view_tests {
             &[],
             false,
             false,
+            0,
         );
         assert!(tip.contains("No recent data"));
         assert!(!tip.contains("()"));
@@ -436,3 +473,6 @@ mod hint_tests {
 
 #[cfg(test)]
 mod claude_tests;
+
+#[cfg(test)]
+mod countdown_tests;

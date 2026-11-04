@@ -40,7 +40,7 @@ Know, without interrupting your work, whether your PC is under load and how much
   - **Codex**: 5-hour and weekly usage, using your existing `codex` CLI login.
 - **Toggles**: every item and every provider can be turned on or off independently. Disabled items disappear and the strip shrinks.
 - **Color cues**: progress bars turn yellow near the limit and red when close to it.
-- **Hover** for a tooltip with reset times, last update time, and error details.
+- **Hover** for a tooltip with reset times and a countdown to known future resets, last update time, and error details. The countdown rounds up to whole minutes.
 - **Right-click** for a menu: **Settings**, **Refresh now**, **Start with Windows**, **Exit**.
 - **Plays nice with the taskbar** (see below).
 
