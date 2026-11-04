@@ -79,7 +79,7 @@ Know, without interrupting your work, whether your PC is under load and how much
 
 ### Code signing
 
-CCT has applied to the [SignPath Foundation](https://signpath.org/) program for open-source projects (#36). Once approved, release executables will be signed: free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). See the [code signing policy](CODE_SIGNING.md).
+Code signing is planned through the free [SignPath Foundation](https://signpath.org/) program for open-source projects (#36). We will reapply as the project gains adoption; until then, releases are unsigned but ship SHA-256 checksums and signed build provenance (below). See the [code signing policy](CODE_SIGNING.md).
 
 ### "Windows protected your PC" (SmartScreen)
 
