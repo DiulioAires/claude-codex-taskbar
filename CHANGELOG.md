@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-11-04
+
+### Added
+- Claude tooltip shows per-model weekly limits (Opus, Sonnet) and extra usage when the account
+  has them (#24, thanks @gnevesx).
+
+### Fixed
+- Codex: the weekly limit no longer shows as the 5-hour one; windows are classified by their
+  reported duration (#22, thanks @gnevesx).
+- HTTP requests refuse plain HTTP and never follow redirects, so headers cannot leak (#7).
+- *Keep login active* runs the CLI by absolute path from `System32` instead of `cmd /C` (#6).
+
+### Changed
+- Executable is ~135 KB smaller (about 800 KB): the Universal CRT comes from Windows and the
+  build is optimized for size.
+
+### Security
+- Releases carry signed build provenance attestations; see *Verifying a release* in
+  `SECURITY.md` (#19).
+- CI and release builds use Actions pinned by commit SHA and `--locked` dependencies (#8), and
+  fail if the executable exceeds 1 MB (#18).
+
 ## [0.2.0] - 2026-10-30
 
 ### Changed
@@ -22,5 +44,6 @@ All notable changes to this project are documented here. The format follows
   5-hour/weekly limits, tooltip with reset times, settings window, start with Windows,
   English and Brazilian Portuguese UI.
 
+[0.2.1]: https://github.com/chiarorosa/claude-codex-taskbar/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/chiarorosa/claude-codex-taskbar/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/chiarorosa/claude-codex-taskbar/releases/tag/v0.1.0
