@@ -4,7 +4,7 @@
 //! so the CLI keeps sole ownership of its login.
 
 use super::http::get_json;
-use super::{FetchError, Provider, ProviderUsage, WindowUsage};
+use super::{FetchError, ModelKind, Provider, ProviderUsage, WindowUsage};
 use crate::timeutil::parse_rfc3339;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -51,12 +51,30 @@ fn parse_window(v: &Value) -> Option<WindowUsage> {
     })
 }
 
+fn parse_model_windows(v: &Value) -> Vec<(ModelKind, WindowUsage)> {
+    [
+        ("seven_day_opus", ModelKind::Opus),
+        ("seven_day_sonnet", ModelKind::Sonnet),
+    ]
+    .into_iter()
+    .filter_map(|(field, model)| parse_window(&v[field]).map(|window| (model, window)))
+    .collect()
+}
+
+/// Reads reported windows without inventing absent values; e.g. `parse_claude_usage(&response)`.
 pub fn parse_claude_usage(v: &Value) -> Result<ProviderUsage, FetchError> {
     let usage = ProviderUsage {
         five_hour: parse_window(&v["five_hour"]),
         weekly: parse_window(&v["seven_day"]),
+        weekly_by_model: parse_model_windows(v),
+        extra_usage_enabled: v["extra_usage"]["is_enabled"].as_bool() == Some(true),
     };
-    if usage.five_hour.is_none() && usage.weekly.is_none() && v.get("five_hour").is_none() {
+    if usage.five_hour.is_none()
+        && usage.weekly.is_none()
+        && usage.weekly_by_model.is_empty()
+        && !usage.extra_usage_enabled
+        && v.get("five_hour").is_none()
+    {
         return Err(FetchError::BadResponse("unexpected usage format".into()));
     }
     Ok(usage)
@@ -194,6 +212,116 @@ mod tests {
         let u = parse_claude_usage(&v).unwrap();
         assert_eq!(u.weekly, None);
         assert!(u.five_hour.is_some());
+    }
+
+    #[test]
+    fn usage_models_preserve_identity_zero_and_reset() {
+        let fixture = include_str!("../../tests/fixtures/claude_usage_models.json");
+        let u = parse_claude_usage(&serde_json::from_str(fixture).unwrap()).unwrap();
+        assert_eq!(
+            u.weekly_by_model,
+            vec![
+                (
+                    ModelKind::Opus,
+                    WindowUsage {
+                        used_pct: 72.0,
+                        resets_at: Some(1793948399)
+                    }
+                ),
+                (
+                    ModelKind::Sonnet,
+                    WindowUsage {
+                        used_pct: 0.0,
+                        resets_at: None
+                    }
+                ),
+            ]
+        );
+        assert!(u.extra_usage_enabled);
+    }
+
+    #[test]
+    fn usage_models_omit_null_missing_and_invalid_windows() {
+        for fields in [
+            json!({}),
+            json!({"seven_day_opus": null, "seven_day_sonnet": null}),
+            json!({"seven_day_opus": {}, "seven_day_sonnet": {"utilization": "72"}}),
+        ] {
+            let mut v = fields;
+            v["five_hour"] = json!(null);
+            let u = parse_claude_usage(&v).unwrap();
+            assert_eq!(u.weekly_by_model, vec![]);
+            assert!(!u.extra_usage_enabled);
+        }
+        let u = parse_claude_usage(&serde_json::from_str(USAGE).unwrap()).unwrap();
+        assert!(u.weekly_by_model.is_empty());
+        assert!(!u.extra_usage_enabled);
+    }
+
+    #[test]
+    fn usage_models_clamp_percentages() {
+        let v = json!({"five_hour": null, "seven_day_opus": {"utilization": 150},
+            "seven_day_sonnet": {"utilization": -5}});
+        let u = parse_claude_usage(&v).unwrap();
+        assert_eq!(
+            u.weekly_by_model,
+            vec![
+                (
+                    ModelKind::Opus,
+                    WindowUsage {
+                        used_pct: 100.0,
+                        resets_at: None
+                    }
+                ),
+                (
+                    ModelKind::Sonnet,
+                    WindowUsage {
+                        used_pct: 0.0,
+                        resets_at: None
+                    }
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn extra_usage_requires_explicit_enabled_boolean() {
+        for extra in [
+            json!(null),
+            json!({}),
+            json!({"is_enabled": false}),
+            json!({"is_enabled": "true"}),
+        ] {
+            let v = json!({"five_hour": null, "extra_usage": extra});
+            assert!(!parse_claude_usage(&v).unwrap().extra_usage_enabled);
+        }
+    }
+
+    #[test]
+    fn usage_accepts_model_only_response() {
+        let v = json!({"seven_day_opus": {"utilization": 72}});
+        let u = parse_claude_usage(&v).unwrap();
+        assert_eq!(
+            u.weekly_by_model,
+            vec![(
+                ModelKind::Opus,
+                WindowUsage {
+                    used_pct: 72.0,
+                    resets_at: None
+                }
+            )]
+        );
+        assert_eq!(u.five_hour, None);
+        assert_eq!(u.weekly, None);
+    }
+
+    #[test]
+    fn usage_accepts_extra_usage_only_response() {
+        let u = parse_claude_usage(&json!({"extra_usage": {"is_enabled": true}})).unwrap();
+        assert!(u.extra_usage_enabled);
+        assert!(u.weekly_by_model.is_empty());
+        assert_eq!(u.five_hour, None);
+        assert_eq!(u.weekly, None);
     }
 
     #[test]

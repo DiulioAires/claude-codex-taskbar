@@ -177,6 +177,7 @@ mod tests {
             usage: ProviderUsage {
                 five_hour: None,
                 weekly: None,
+                ..Default::default()
             },
             at: 0,
         }

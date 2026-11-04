@@ -138,6 +138,7 @@ mod tests {
                         resets_at: None,
                     }),
                     weekly: None,
+                    ..Default::default()
                 },
                 false,
                 now,
@@ -210,6 +211,7 @@ mod queue_tests {
                             resets_at: None,
                         }),
                         weekly: None,
+                        ..Default::default()
                     },
                     false,
                     now,

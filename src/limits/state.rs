@@ -40,6 +40,13 @@ pub fn age_status(status: &ProviderStatus, now: i64, max_age: i64) -> ProviderSt
         ProviderUsage {
             five_hour: keep(&usage.five_hour),
             weekly: keep(&usage.weekly),
+            weekly_by_model: usage
+                .weekly_by_model
+                .iter()
+                .filter(|(_, window)| window.resets_at.is_none_or(|reset| reset > now))
+                .cloned()
+                .collect(),
+            extra_usage_enabled: usage.extra_usage_enabled,
         }
     };
     match status {
@@ -75,6 +82,7 @@ mod tests {
                 resets_at: Some(5000),
             }),
             weekly: None,
+            ..Default::default()
         }
     }
 
@@ -171,6 +179,7 @@ mod aging_tests {
                 used_pct: 30.0,
                 resets_at: Some(resetw),
             }),
+            ..Default::default()
         }
     }
 
@@ -233,5 +242,43 @@ mod aging_tests {
         };
         assert_eq!(u.five_hour, None);
         assert!(u.weekly.is_some());
+    }
+
+    #[test]
+    fn model_windows_expire_independently_without_losing_extra_usage() {
+        let mut u = usage(10_000, 90_000);
+        u.weekly_by_model = vec![
+            (
+                super::super::ModelKind::Opus,
+                WindowUsage {
+                    used_pct: 72.0,
+                    resets_at: Some(1200),
+                },
+            ),
+            (
+                super::super::ModelKind::Sonnet,
+                WindowUsage {
+                    used_pct: 0.0,
+                    resets_at: None,
+                },
+            ),
+        ];
+        u.extra_usage_enabled = true;
+        let status = ProviderStatus::Ok { usage: u, at: 1000 };
+        let ProviderStatus::Ok { usage, .. } = age_status(&status, 1200, 900) else {
+            panic!("fresh status must remain OK")
+        };
+        assert_eq!(
+            usage.weekly_by_model,
+            vec![(
+                super::super::ModelKind::Sonnet,
+                WindowUsage {
+                    used_pct: 0.0,
+                    resets_at: None
+                }
+            )]
+        );
+        assert!(usage.extra_usage_enabled);
+        assert_eq!(usage.five_hour.unwrap().used_pct, 92.0);
     }
 }
