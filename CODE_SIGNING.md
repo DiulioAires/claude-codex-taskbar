@@ -1,7 +1,9 @@
 # Code signing policy
 
-CCT has applied to the [SignPath Foundation](https://signpath.org/) program for open-source
-projects (#36). Once approved, the Windows release executables will carry this attribution:
+Code signing is planned through the free [SignPath Foundation](https://signpath.org/) program
+for open-source projects (#36). A first application was declined because the project is still
+new; we will reapply as it gains adoption. Once accepted, the Windows release executables will
+carry this attribution:
 
 > Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
 > [SignPath Foundation](https://signpath.org/).
