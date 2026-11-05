@@ -19,15 +19,20 @@ pub fn gpu_max_engine(samples: &[(String, f64)]) -> Option<f32> {
     Some((max as f32).clamp(0.0, 100.0))
 }
 
-/// `"0 C: D:"` → `"C: D:"`; a disk without letters (`"2"`) → `"Disk 2"`.
-pub fn disk_label(instance: &str) -> String {
+/// Split a PDH disk instance into its index and space-separated drive letters.
+pub(crate) fn disk_parts(instance: &str) -> (&str, String) {
     let mut parts = instance.split_whitespace();
     let index = parts.next().unwrap_or(instance);
-    let letters: Vec<&str> = parts.collect();
+    (index, parts.collect::<Vec<_>>().join(" "))
+}
+
+/// `"0 C: D:"` → `"C: D:"`; a disk without letters (`"2"`) → `"Disk 2"`.
+pub fn disk_label(instance: &str) -> String {
+    let (index, letters) = disk_parts(instance);
     if letters.is_empty() {
         format!("Disk {index}")
     } else {
-        letters.join(" ")
+        letters
     }
 }
 

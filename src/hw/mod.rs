@@ -21,7 +21,7 @@ const FMT: PDH_FMT = PDH_FMT(PDH_FMT_DOUBLE.0 | 0x8000);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DiskReading {
-    /// PDH instance name, e.g. `"0 C:"`; stable key for config.
+    /// PDH instance name, e.g. `"0 C:"`; the index can change after disk re-enumeration.
     pub instance: String,
     pub label: String,
     pub active_pct: f32,

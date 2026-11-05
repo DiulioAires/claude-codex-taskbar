@@ -38,7 +38,7 @@ Know, without interrupting your work, whether your PC is under load and how much
 - **Subscription limits**:
   - **Claude Code**: 5-hour and weekly usage, using your existing `claude` CLI login. Hover for reported Opus/Sonnet weekly percentages and their local reset times, plus an extra-usage notice when enabled. Missing model readings are omitted, real `0%` is retained, and expired model windows disappear independently; retained old data keeps its stale notice. These details use the existing response, without additional requests or settings.
   - **Codex**: 5-hour and weekly usage, using your existing `codex` CLI login.
-- **Toggles**: every item and every provider can be turned on or off independently. Disabled items disappear and the strip shrinks.
+- **Toggles**: every item and every provider can be turned on or off independently. Disabled items disappear and the strip shrinks. Hidden disks are remembered by their drive letters, so changing disk numbers does not lose the setting; disks without letters use their disk number. Existing hidden-disk settings remain compatible.
 - **Color cues**: progress bars turn yellow near the limit and red when close to it.
 - **Hover** for a tooltip with reset times and a countdown to known future resets, last update time, and error details. The countdown follows the absolute time, e.g. `resets at 14:20 (in 1h 12m)`, using minutes, hours/minutes or days/hours and omitting a zero second unit (`1h`, `7d`).
 - **Right-click** for a menu: **Settings**, **Refresh now**, **Start with Windows**, **Exit**.
