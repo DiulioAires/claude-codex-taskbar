@@ -1,7 +1,9 @@
 //! User configuration persisted as JSON under %APPDATA%.
 
+use crate::hw::parse::disk_parts;
 use crate::model::ItemId;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -16,7 +18,7 @@ pub struct Config {
     pub limits_interval_secs: u32,
     pub claude_enabled: bool,
     pub codex_enabled: bool,
-    /// Keys from [`item_key`] of items the user turned off.
+    /// Keys from [`item_key`] of items the user turned off; normalized by [`Self::clamped`].
     pub hidden_items: Vec<String>,
     pub first_run_done: bool,
     /// Opt-in: run `claude auth status` when the Claude login has expired.
@@ -71,17 +73,27 @@ impl Config {
     pub fn clamped(mut self) -> Config {
         self.hw_interval_secs = self.hw_interval_secs.clamp(1, 5);
         self.limits_interval_secs = self.limits_interval_secs.clamp(60, 3600);
+        // Normalize v0.1/v0.2 disk keys once, including disks not currently connected.
+        for key in &mut self.hidden_items {
+            if let Some(instance) = key.strip_prefix("disk:")
+                && disk_parts(instance).0.parse::<u32>().is_ok()
+            {
+                *key = disk_key(instance);
+            }
+        }
+        let mut seen = HashSet::new();
+        self.hidden_items.retain(|key| seen.insert(key.clone()));
         self
     }
 
     pub fn is_visible(&self, id: &ItemId) -> bool {
         let key = item_key(id);
-        !self.hidden_items.iter().any(|k| key_matches(k, &key))
+        !self.hidden_items.contains(&key)
     }
 
     pub fn set_visible(&mut self, id: &ItemId, visible: bool) {
         let key = item_key(id);
-        self.hidden_items.retain(|k| !key_matches(k, &key));
+        self.hidden_items.retain(|k| *k != key);
         if !visible {
             self.hidden_items.push(key);
         }
@@ -90,26 +102,12 @@ impl Config {
 
 /// Disks with drive letters keep their identity when PDH disk indices change.
 fn disk_key(instance: &str) -> String {
-    let mut parts = instance.split_whitespace();
-    let index = parts.next().unwrap_or(instance);
-    let letters = parts.collect::<Vec<_>>().join(" ");
+    let (index, letters) = disk_parts(instance);
     if letters.is_empty() {
         format!("disk:#{index}")
     } else {
         format!("disk:{letters}")
     }
-}
-
-/// Accept v0.1/v0.2 keys (`disk:0 C:` or `disk:2`) without rewriting the config.
-fn key_matches(stored: &str, key: &str) -> bool {
-    stored == key
-        || stored.strip_prefix("disk:").is_some_and(|instance| {
-            instance
-                .split_whitespace()
-                .next()
-                .is_some_and(|index| index.parse::<u32>().is_ok())
-                && disk_key(instance) == key
-        })
 }
 
 pub fn item_key(id: &ItemId) -> String {
@@ -192,6 +190,51 @@ mod tests {
     }
 
     #[test]
+    fn load_migrates_and_deduplicates_legacy_disk_keys_before_any_lookup() {
+        let path = temp_file("migrate-disk-keys");
+        std::fs::write(
+            &path,
+            r#"{"hidden_items":["disk:0 C:","gpu","disk:C:","disk:1 C:","disk:2","disk:#2","disk:7 X: Y:"]}"#,
+        )
+        .unwrap();
+        let cfg = Config::load_from(&path);
+        assert_eq!(
+            cfg.hidden_items,
+            ["disk:C:", "gpu", "disk:#2", "disk:X: Y:"]
+        );
+
+        // No disk enumeration or visibility toggle is needed, even for unplugged disks.
+        cfg.save_to(&path).unwrap();
+        let saved: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved.hidden_items, cfg.hidden_items);
+        assert_eq!(Config::load_from(&path), cfg);
+    }
+
+    #[test]
+    fn load_preserves_modern_and_unrecognized_keys() {
+        let path = temp_file("modern-disk-keys");
+        std::fs::write(
+            &path,
+            r#"{"hidden_items":["disk:C:","disk:C: D:","disk:#2","ram","disk:","disk:unknown","future-item"]}"#,
+        )
+        .unwrap();
+        let cfg = Config::load_from(&path);
+        assert_eq!(
+            cfg.hidden_items,
+            [
+                "disk:C:",
+                "disk:C: D:",
+                "disk:#2",
+                "ram",
+                "disk:",
+                "disk:unknown",
+                "future-item"
+            ]
+        );
+        assert_eq!(cfg.clone().clamped(), cfg);
+    }
+
+    #[test]
     fn config_clamps_intervals() {
         let c = |hw, lim| {
             Config {
@@ -211,7 +254,7 @@ mod tests {
     #[test]
     fn visibility_respects_hidden_items() {
         let cfg = Config {
-            hidden_items: vec!["disk:1 D:".into()],
+            hidden_items: vec!["disk:D:".into()],
             ..Config::default()
         };
         assert!(!cfg.is_visible(&ItemId::Disk("1 D:".into())));
@@ -234,10 +277,13 @@ mod tests {
 
     #[test]
     fn legacy_disk_key_still_matches() {
-        let cfg = Config {
-            hidden_items: vec!["disk:0 C:".into(), "disk:2 D: E:".into(), "disk:3".into()],
-            ..Config::default()
-        };
+        let path = temp_file("legacy-disk-matches");
+        std::fs::write(
+            &path,
+            r#"{"hidden_items":["disk:0 C:","disk:2 D: E:","disk:3"]}"#,
+        )
+        .unwrap();
+        let cfg = Config::load_from(&path);
         assert!(!cfg.is_visible(&ItemId::Disk("1 C:".into())));
         assert!(!cfg.is_visible(&ItemId::Disk("4 D: E:".into())));
         assert!(!cfg.is_visible(&ItemId::Disk("3".into())));
@@ -268,10 +314,11 @@ mod tests {
                 "disk:2 D:".into(),
             ],
             ..Config::default()
-        };
+        }
+        .clamped();
         cfg.set_visible(&ItemId::Disk("3 C:".into()), true);
         assert!(cfg.is_visible(&ItemId::Disk("3 C:".into())));
-        assert_eq!(cfg.hidden_items, ["gpu", "disk:2 D:"]);
+        assert_eq!(cfg.hidden_items, ["gpu", "disk:D:"]);
     }
 
     #[test]
