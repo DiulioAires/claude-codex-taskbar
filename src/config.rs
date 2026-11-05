@@ -76,16 +76,40 @@ impl Config {
 
     pub fn is_visible(&self, id: &ItemId) -> bool {
         let key = item_key(id);
-        !self.hidden_items.contains(&key)
+        !self.hidden_items.iter().any(|k| key_matches(k, &key))
     }
 
     pub fn set_visible(&mut self, id: &ItemId, visible: bool) {
         let key = item_key(id);
-        self.hidden_items.retain(|k| *k != key);
+        self.hidden_items.retain(|k| !key_matches(k, &key));
         if !visible {
             self.hidden_items.push(key);
         }
     }
+}
+
+/// Disks with drive letters keep their identity when PDH disk indices change.
+fn disk_key(instance: &str) -> String {
+    let mut parts = instance.split_whitespace();
+    let index = parts.next().unwrap_or(instance);
+    let letters = parts.collect::<Vec<_>>().join(" ");
+    if letters.is_empty() {
+        format!("disk:#{index}")
+    } else {
+        format!("disk:{letters}")
+    }
+}
+
+/// Accept v0.1/v0.2 keys (`disk:0 C:` or `disk:2`) without rewriting the config.
+fn key_matches(stored: &str, key: &str) -> bool {
+    stored == key
+        || stored.strip_prefix("disk:").is_some_and(|instance| {
+            instance
+                .split_whitespace()
+                .next()
+                .is_some_and(|index| index.parse::<u32>().is_ok())
+                && disk_key(instance) == key
+        })
 }
 
 pub fn item_key(id: &ItemId) -> String {
@@ -93,7 +117,7 @@ pub fn item_key(id: &ItemId) -> String {
         ItemId::Cpu => "cpu".into(),
         ItemId::Ram => "ram".into(),
         ItemId::Gpu => "gpu".into(),
-        ItemId::Disk(instance) => format!("disk:{instance}"),
+        ItemId::Disk(instance) => disk_key(instance),
         ItemId::ClaudeFive => "claude5h".into(),
         ItemId::ClaudeWeek => "claudeweek".into(),
         ItemId::CodexFive => "codex5h".into(),
@@ -196,11 +220,81 @@ mod tests {
     }
 
     #[test]
+    fn disk_key_uses_letters() {
+        for instance in ["0 C:", "1 C:"] {
+            assert_eq!(item_key(&ItemId::Disk(instance.into())), "disk:C:");
+        }
+        assert_eq!(item_key(&ItemId::Disk("3 C: D:".into())), "disk:C: D:");
+    }
+
+    #[test]
+    fn disk_key_without_letters_uses_index() {
+        assert_eq!(item_key(&ItemId::Disk("2".into())), "disk:#2");
+    }
+
+    #[test]
+    fn legacy_disk_key_still_matches() {
+        let cfg = Config {
+            hidden_items: vec!["disk:0 C:".into(), "disk:2 D: E:".into(), "disk:3".into()],
+            ..Config::default()
+        };
+        assert!(!cfg.is_visible(&ItemId::Disk("1 C:".into())));
+        assert!(!cfg.is_visible(&ItemId::Disk("4 D: E:".into())));
+        assert!(!cfg.is_visible(&ItemId::Disk("3".into())));
+        assert!(cfg.is_visible(&ItemId::Disk("0 F:".into())));
+        assert!(cfg.is_visible(&ItemId::Disk("2 D:".into())));
+        assert!(cfg.is_visible(&ItemId::Disk("4".into())));
+    }
+
+    #[test]
+    fn hidden_disk_stays_hidden_after_reenumeration() {
+        let mut cfg = Config::default();
+        cfg.set_visible(&ItemId::Disk("0 C:".into()), false);
+        assert!(!cfg.is_visible(&ItemId::Disk("1 C:".into())));
+        assert!(cfg.is_visible(&ItemId::Disk("0 D:".into())));
+        cfg.set_visible(&ItemId::Disk("2".into()), false);
+        assert!(!cfg.is_visible(&ItemId::Disk("2".into())));
+        assert!(cfg.is_visible(&ItemId::Disk("3".into())));
+    }
+
+    #[test]
+    fn showing_legacy_disk_removes_all_matching_keys() {
+        let mut cfg = Config {
+            hidden_items: vec![
+                "disk:0 C:".into(),
+                "disk:1 C:".into(),
+                "disk:C:".into(),
+                "gpu".into(),
+                "disk:2 D:".into(),
+            ],
+            ..Config::default()
+        };
+        cfg.set_visible(&ItemId::Disk("3 C:".into()), true);
+        assert!(cfg.is_visible(&ItemId::Disk("3 C:".into())));
+        assert_eq!(cfg.hidden_items, ["gpu", "disk:2 D:"]);
+    }
+
+    #[test]
+    fn hiding_legacy_disk_saves_one_stable_key() {
+        let path = temp_file("legacy-disk");
+        std::fs::write(&path, r#"{"hidden_items":["disk:0 C:","disk:C:","ram"]}"#).unwrap();
+        let mut cfg = Config::load_from(&path);
+        cfg.set_visible(&ItemId::Disk("1 C:".into()), false);
+        cfg.set_visible(&ItemId::Disk("2 C:".into()), false);
+        assert_eq!(cfg.hidden_items, ["ram", "disk:C:"]);
+        cfg.save_to(&path).unwrap();
+        let loaded = Config::load_from(&path);
+        assert!(!loaded.is_visible(&ItemId::Disk("3 C:".into())));
+        assert!(!loaded.is_visible(&ItemId::Ram));
+        assert!(loaded.is_visible(&ItemId::Disk("0 D:".into())));
+    }
+
+    #[test]
     fn item_keys_are_stable() {
         assert_eq!(item_key(&ItemId::Cpu), "cpu");
         assert_eq!(item_key(&ItemId::Ram), "ram");
         assert_eq!(item_key(&ItemId::Gpu), "gpu");
-        assert_eq!(item_key(&ItemId::Disk("0 C:".into())), "disk:0 C:");
+        assert_eq!(item_key(&ItemId::Disk("0 C:".into())), "disk:C:");
         assert_eq!(item_key(&ItemId::ClaudeFive), "claude5h");
         assert_eq!(item_key(&ItemId::ClaudeWeek), "claudeweek");
         assert_eq!(item_key(&ItemId::CodexFive), "codex5h");
