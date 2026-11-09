@@ -12,6 +12,11 @@ use std::os::windows::io::{FromRawHandle, OwnedHandle};
 use std::path::Path;
 use windows::Win32::Foundation::{HANDLE, WAIT_OBJECT_0};
 use windows::Win32::System::Console::{COORD, ClosePseudoConsole, CreatePseudoConsole, HPCON};
+use windows::Win32::System::JobObjects::{
+    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+    SetInformationJobObject,
+};
 use windows::Win32::System::Pipes::CreatePipe;
 use windows::Win32::System::Threading::{
     CreateProcessW, DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT,
@@ -40,6 +45,40 @@ unsafe fn owned(h: HANDLE) -> OwnedHandle {
 fn raw(h: &OwnedHandle) -> HANDLE {
     use std::os::windows::io::AsRawHandle;
     HANDLE(h.as_raw_handle())
+}
+
+/// A Windows Job Object configured with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`.
+///
+/// Closing the handle (on `Drop`) terminates every process assigned to the job and all of
+/// their descendants, so a timed-out `.cmd` shim cannot leave `node` or the native CLI behind.
+pub struct Job(#[allow(dead_code)] OwnedHandle);
+
+impl Job {
+    /// Creates a kill-on-close job and assigns `child` to it.
+    pub fn assign(child: &std::process::Child) -> Option<Self> {
+        use std::os::windows::io::AsRawHandle;
+        Self::assign_handle(HANDLE(child.as_raw_handle()))
+    }
+
+    pub(crate) fn assign_handle(process: HANDLE) -> Option<Self> {
+        // SAFETY: creates an unnamed job object; the returned handle is owned right away.
+        let job = unsafe { owned(CreateJobObjectW(None, None).ok()?) };
+        let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        // SAFETY: `info` is initialized and sized for `JobObjectExtendedLimitInformation`.
+        unsafe {
+            SetInformationJobObject(
+                raw(&job),
+                JobObjectExtendedLimitInformation,
+                (&raw const info).cast(),
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        }
+        .ok()?;
+        // SAFETY: both `job` and `process` are valid handles.
+        unsafe { AssignProcessToJobObject(raw(&job), process) }.ok()?;
+        Some(Self(job))
+    }
 }
 
 /// Closes the pseudo console, which also ends any process still attached to it.
@@ -175,6 +214,7 @@ pub fn run_in_terminal(
     .ok()?;
     // SAFETY: both handles were just returned by CreateProcessW and are owned here.
     let (process, _thread) = unsafe { (owned(info.hProcess), owned(info.hThread)) };
+    let job = Job::assign_handle(raw(&process));
 
     // SAFETY: valid process handle for the whole block.
     let code = unsafe {
@@ -184,13 +224,27 @@ pub fn run_in_terminal(
                 .ok()
                 .map(|_| code)
         } else {
+            drop(job);
             let _ = TerminateProcess(raw(&process), 1);
             WaitForSingleObject(raw(&process), REAP_MS);
             None
         }
     };
-    // Closing the console ends anything still attached (e.g. the CLI under a `.cmd` shim).
+    // Closing the job and console ends anything still attached (e.g. the CLI under a `.cmd` shim).
     drop(attrs);
     drop(pc);
     code
+}
+
+#[cfg(test)]
+pub(crate) fn process_has_exited(pid: u32, wait_ms: u32) -> bool {
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_SYNCHRONIZE};
+    // SAFETY: queries the kernel process object by PID; no memory or state is modified.
+    let Ok(h) = (unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, pid) }) else {
+        return true;
+    };
+    // SAFETY: `h` was just returned by `OpenProcess` and is owned here.
+    let h = unsafe { owned(h) };
+    // SAFETY: `h` is a valid process handle with `SYNCHRONIZE` access.
+    unsafe { WaitForSingleObject(raw(&h), wait_ms) == WAIT_OBJECT_0 }
 }

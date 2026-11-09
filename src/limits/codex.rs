@@ -6,6 +6,7 @@
 
 use super::http::get_json;
 use super::keepalive::{CREATE_NO_WINDOW, candidate_dirs, resolve_cli, system_dir};
+use super::terminal::Job;
 use super::{FetchError, Provider, ProviderUsage, WindowUsage};
 use crate::model::Kind;
 use crate::timeutil::{now_unix, parse_rfc3339};
@@ -147,8 +148,9 @@ pub fn parse_app_server_rate_limits(v: &Value) -> Result<ProviderUsage, FetchErr
     Ok(usage)
 }
 
-/// Runs `codex app-server --listen stdio://` from `cwd`, sends `account/rateLimits/read`,
-/// waits up to `timeout` for response `id: 3`, and always kills and reaps the child.
+/// Runs `codex app-server --listen stdio://` from `cwd` inside a kill-on-close Job Object,
+/// sends `account/rateLimits/read`, waits up to `timeout` for response `id: 3`, and always
+/// kills the whole process tree and reaps the child.
 pub fn run_app_server_rate_limits(
     cli: &Path,
     cwd: &Path,
@@ -165,10 +167,12 @@ pub fn run_app_server_rate_limits(
         .stderr(Stdio::null())
         .spawn()
         .map_err(|_| FetchError::Network("app-server spawn failed".into()))?;
+    let job = Job::assign(&child);
 
     let mut stdin = child.stdin.take();
     let Some(stdout) = child.stdout.take() else {
         drop(stdin);
+        drop(job);
         let _ = child.kill();
         let _ = child.wait();
         return Err(FetchError::Network("app-server stdout unavailable".into()));
@@ -178,6 +182,7 @@ pub fn run_app_server_rate_limits(
         && (s.write_all(APP_SERVER_REQUEST.as_bytes()).is_err() || s.flush().is_err())
     {
         drop(stdin);
+        drop(job);
         let _ = child.kill();
         let _ = child.wait();
         return Err(FetchError::Network("app-server write failed".into()));
@@ -204,6 +209,7 @@ pub fn run_app_server_rate_limits(
         Err(_) => Err(FetchError::Network("app-server timed out".into())),
     };
     drop(stdin);
+    drop(job);
     let _ = child.kill();
     let _ = child.wait();
     result
@@ -741,6 +747,126 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
 
         assert!(matches!(res, Err(FetchError::Network(_))));
+    }
+
+    #[test]
+    fn app_server_runner_times_out_and_kills_process_tree() {
+        if let Ok(pid_file) = std::env::var("CCT_APP_SERVER_GRANDCHILD_PID") {
+            std::fs::write(pid_file, std::process::id().to_string()).unwrap();
+            std::thread::sleep(Duration::from_secs(60));
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("wuw-codex-app-tree-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let pid_file = base.join("grandchild.pid");
+        let shim = base.join("codex.cmd");
+        let exe = std::env::current_exe().unwrap();
+        let script = format!(
+            "@echo off\r\nset \"CCT_APP_SERVER_GRANDCHILD_PID={}\"\r\n\"{}\" --exact limits::codex::tests::app_server_runner_times_out_and_kills_process_tree\r\n",
+            pid_file.display(),
+            exe.display()
+        );
+        std::fs::write(&shim, script).unwrap();
+        let cwd = system_dir().unwrap();
+
+        let res = run_app_server_rate_limits(&shim, &cwd, &base, Duration::from_millis(500));
+        let pid: u32 = std::fs::read_to_string(&pid_file)
+            .expect("grandchild should write its PID before timeout")
+            .trim()
+            .parse()
+            .unwrap();
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert!(matches!(res, Err(FetchError::Network(_))));
+        assert!(
+            crate::limits::terminal::process_has_exited(pid, 2_000),
+            "grandchild process {pid} should be killed with the job"
+        );
+    }
+
+    #[test]
+    fn app_server_weekly_only_replaces_five_hour_through_stale_and_reset() {
+        use crate::limits::ProviderStatus;
+        use crate::limits::state::{age_status, next_status};
+
+        // 1. t=1000: successful status has both windows, with the 5h reset at 5000.
+        let initial = ProviderUsage {
+            five_hour: Some(WindowUsage {
+                used_pct: 12.0,
+                resets_at: Some(5000),
+            }),
+            weekly: Some(WindowUsage {
+                used_pct: 40.0,
+                resets_at: Some(1400),
+            }),
+            ..Default::default()
+        };
+        let status = next_status(&ProviderStatus::Loading, Ok(initial), 1000);
+
+        // 2. t=1100: weekly-only app-server result replaces status; old 5h is absent immediately.
+        let weekly_only = json!({
+            "id": 3,
+            "result": {
+                "rateLimits": {
+                    "primary": {
+                        "usedPercent": 55,
+                        "windowDurationMins": 10080,
+                        "resetsAt": 1400
+                    },
+                    "secondary": null
+                }
+            }
+        });
+        let status = next_status(&status, parse_app_server_rate_limits(&weekly_only), 1100);
+        assert_eq!(
+            status,
+            ProviderStatus::Ok {
+                usage: ProviderUsage {
+                    five_hour: None,
+                    weekly: Some(WindowUsage {
+                        used_pct: 55.0,
+                        resets_at: Some(1400),
+                    }),
+                    ..Default::default()
+                },
+                at: 1100,
+            }
+        );
+
+        // 3. t=1200: transient Network error preserves only weekly as stale with at=1100.
+        let err = FetchError::Network("timeout".into());
+        let status = next_status(&status, Err(err.clone()), 1200);
+        assert_eq!(
+            status,
+            ProviderStatus::Stale {
+                usage: ProviderUsage {
+                    five_hour: None,
+                    weekly: Some(WindowUsage {
+                        used_pct: 55.0,
+                        resets_at: Some(1400),
+                    }),
+                    ..Default::default()
+                },
+                at: 1100,
+                err: err.clone(),
+            }
+        );
+
+        // 4. t=1400: aging with max_age=900 drops expired weekly without inventing a 0% reading.
+        let aged = age_status(&status, 1400, 900);
+        assert_eq!(
+            aged,
+            ProviderStatus::Stale {
+                usage: ProviderUsage {
+                    five_hour: None,
+                    weekly: None,
+                    ..Default::default()
+                },
+                at: 1100,
+                err,
+            }
+        );
     }
 
     #[test]

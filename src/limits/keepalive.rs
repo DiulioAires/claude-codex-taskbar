@@ -2,7 +2,7 @@
 //! status command (`claude auth status`, `codex login status`; neither sends a prompt) so
 //! the CLI itself renews its own login. This app still never writes credentials files.
 
-use super::terminal::run_in_terminal;
+use super::terminal::{Job, run_in_terminal};
 use super::{FetchError, ProviderStatus};
 use crate::model::Kind;
 use std::ffi::OsString;
@@ -217,17 +217,20 @@ pub fn run_login_status(kind: Kind) -> bool {
     run_with_timeout(command, Duration::from_millis(RUN_TIMEOUT_MS.into()))
 }
 
-/// Spawns `command` and waits up to `timeout`; on overrun the child is killed and reaped.
+/// Spawns `command` inside a kill-on-close job and waits up to `timeout`; on overrun the
+/// whole process tree is killed and the child is reaped.
 fn run_with_timeout(mut command: Command, timeout: Duration) -> bool {
     let Ok(mut child) = command.spawn() else {
         return false;
     };
+    let job = Job::assign(&child);
     let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => return status.success(),
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(100)),
             _ => {
+                drop(job);
                 let _ = child.kill();
                 let _ = child.wait();
                 return false;
@@ -725,6 +728,47 @@ mod resolve_tests {
         assert_eq!(
             out.trim().to_lowercase(),
             format!("cwd={};args=auth status", cwd.display()).to_lowercase()
+        );
+    }
+
+    #[test]
+    fn run_with_timeout_kills_process_tree_under_cmd_shim() {
+        if let Ok(pid_file) = std::env::var("CCT_KEEPALIVE_GRANDCHILD_PID") {
+            std::fs::write(pid_file, std::process::id().to_string()).unwrap();
+            std::thread::sleep(Duration::from_secs(60));
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("cct-keepalive-tree-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let pid_file = base.join("grandchild.pid");
+        let shim = base.join("codex.cmd");
+        let exe = std::env::current_exe().unwrap();
+        let script = format!(
+            "@echo off\r\nset \"CCT_KEEPALIVE_GRANDCHILD_PID={}\"\r\n\"{}\" --exact limits::keepalive::resolve_tests::run_with_timeout_kills_process_tree_under_cmd_shim\r\n",
+            pid_file.display(),
+            exe.display()
+        );
+        std::fs::write(&shim, script).unwrap();
+        let cwd = system_dir().unwrap();
+
+        let mut command = login_command(&shim, &["login", "status"], &cwd);
+        command
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        assert!(!run_with_timeout(command, Duration::from_millis(500)));
+
+        let pid: u32 = std::fs::read_to_string(&pid_file)
+            .expect("grandchild should write its PID before timeout")
+            .trim()
+            .parse()
+            .unwrap();
+        let _ = std::fs::remove_dir_all(&base);
+        assert!(
+            crate::limits::terminal::process_has_exited(pid, 2_000),
+            "grandchild process {pid} should be killed with the job"
         );
     }
 }
