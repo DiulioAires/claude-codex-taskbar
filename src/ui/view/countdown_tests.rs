@@ -36,7 +36,15 @@ fn timed_usage() -> ProviderUsage {
 }
 
 fn countdown_tip(lang: Lang, status: &ProviderStatus, now: i64) -> String {
-    tooltip_text(lang, status, status, &[], TaskbarHints::default(), now)
+    tooltip_text(
+        lang,
+        status,
+        status,
+        &[],
+        TaskbarHints::default(),
+        now,
+        false,
+    )
 }
 
 fn model_window(model: ModelKind, minutes: i64) -> (ModelKind, WindowUsage) {
@@ -195,7 +203,7 @@ fn tooltip_omits_countdown_for_elapsed_resets() {
             resets_at: Some(reset),
         };
         let mut line = String::new();
-        window_line(&mut line, Lang::En, "5h", Some(&window), false, NOW);
+        window_line(&mut line, Lang::En, "5h", Some(&window), false, NOW, false);
         let absolute = fmt(t(Lang::En, Key::ResetsFmt), &format_local_hhmm(reset));
         assert_eq!(line, format!("\n  5h: 30% · {absolute}"));
     }

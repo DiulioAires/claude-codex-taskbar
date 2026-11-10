@@ -1,7 +1,7 @@
 //! Direct2D/DirectWrite drawing into a per-pixel-alpha layered window (mockup B).
 
 use super::layout::{ItemMetrics, Layout, Mode};
-use super::view::{ItemView, value_text};
+use super::view::ItemView;
 use crate::model::bar_color;
 use windows::Win32::Foundation::{COLORREF, HWND, POINT, RECT, SIZE};
 use windows::Win32::Graphics::Direct2D::Common::{
@@ -157,9 +157,7 @@ impl Renderer {
         items
             .iter()
             .map(|item| {
-                let value = self
-                    .text_width(&value_text(item.value), &self.value_fmt)
-                    .max(BAR_W);
+                let value = self.text_width(&item.text(), &self.value_fmt).max(BAR_W);
                 let label = self.text_width(&item.label, &self.label_fmt);
                 let badge = self.badge_width(item);
                 ItemMetrics {
@@ -359,7 +357,7 @@ impl Renderer {
                     bottom: y + VALUE_LINE,
                 };
                 rt.DrawText(
-                    &wide(&value_text(item.value)),
+                    &wide(&item.text()),
                     &self.value_fmt,
                     &r,
                     &brush,

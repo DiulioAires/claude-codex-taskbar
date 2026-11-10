@@ -17,6 +17,8 @@ pub struct ItemView {
     pub value: Option<f32>,
     /// Data is old (stale or from session logs): bar drawn at half opacity.
     pub dim: bool,
+    /// Text only: bar geometry and colors still use `value`.
+    pub show_remaining: bool,
     /// Account label drawn before this item, in the provider's color (#74). Set on the
     /// first visible item of each provider so it hides together with that provider.
     pub badge: Option<String>,
@@ -30,9 +32,18 @@ pub struct TaskbarHints {
     pub windows_10: bool,
 }
 
-pub fn value_text(value: Option<f32>) -> String {
+impl ItemView {
+    pub fn text(&self) -> String {
+        value_text(
+            self.value,
+            self.show_remaining && self.kind != Kind::Hardware,
+        )
+    }
+}
+
+pub fn value_text(value: Option<f32>, remaining: bool) -> String {
     match value {
-        Some(v) => format!("{:.0}%", v),
+        Some(v) => format!("{:.0}%", if remaining { 100.0 - v } else { v }),
         None => "—".into(),
     }
 }
@@ -66,6 +77,7 @@ pub fn build_items(
                 label,
                 value,
                 dim,
+                show_remaining: cfg.show_remaining,
                 badge: None,
             });
         }
@@ -173,9 +185,17 @@ fn window_line(
     w: Option<&WindowUsage>,
     weekly: bool,
     now: i64,
+    remaining: bool,
 ) {
     let Some(w) = w else { return };
-    let _ = write!(out, "\n  {label}: {}", value_text(Some(w.used_pct)));
+    let _ = write!(
+        out,
+        "\n  {label}: {}",
+        value_text(Some(w.used_pct), remaining)
+    );
+    if remaining {
+        let _ = write!(out, " {}", t(lang, Key::Remaining));
+    }
     if let Some(reset) = w.resets_at {
         let when = if weekly {
             format_local_day_hhmm(reset)
@@ -189,13 +209,19 @@ fn window_line(
     }
 }
 
-fn model_usage_lines(out: &mut String, lang: Lang, usage: &ProviderUsage, now: i64) {
+fn model_usage_lines(
+    out: &mut String,
+    lang: Lang,
+    usage: &ProviderUsage,
+    now: i64,
+    remaining: bool,
+) {
     for (model, window) in &usage.weekly_by_model {
         let key = match model {
             ModelKind::Opus => Key::LabelOpusWeek,
             ModelKind::Sonnet => Key::LabelSonnetWeek,
         };
-        window_line(out, lang, t(lang, key), Some(window), true, now);
+        window_line(out, lang, t(lang, key), Some(window), true, now, remaining);
     }
     if usage.extra_usage_enabled {
         let _ = write!(out, "\n  {}", t(lang, Key::ExtraUsageEnabled));
@@ -209,12 +235,13 @@ fn provider_block(
     kind: Kind,
     status: &ProviderStatus,
     now: i64,
+    remaining: bool,
 ) {
     let week = t(lang, Key::LabelWeek);
     let usage_lines = |out: &mut String, u: &ProviderUsage| {
-        window_line(out, lang, "5h", u.five_hour.as_ref(), false, now);
-        window_line(out, lang, week, u.weekly.as_ref(), true, now);
-        model_usage_lines(out, lang, u, now);
+        window_line(out, lang, "5h", u.five_hour.as_ref(), false, now, remaining);
+        window_line(out, lang, week, u.weekly.as_ref(), true, now, remaining);
+        model_usage_lines(out, lang, u, now, remaining);
     };
     if !out.is_empty() {
         out.push_str("\n\n");
@@ -263,6 +290,7 @@ pub fn tooltip_text(
     hidden: &[ItemView],
     hints: TaskbarHints,
     now: i64,
+    remaining: bool,
 ) -> String {
     let mut out = String::new();
     for (name, kind, status) in [
@@ -270,7 +298,7 @@ pub fn tooltip_text(
         ("Codex", Kind::Codex, codex),
     ] {
         if *status != ProviderStatus::Disabled {
-            provider_block(&mut out, lang, name, kind, status, now);
+            provider_block(&mut out, lang, name, kind, status, now, remaining);
         }
     }
     if !hidden.is_empty() {
@@ -279,7 +307,10 @@ pub fn tooltip_text(
         }
         out.push_str(t(lang, Key::HiddenItems));
         for item in hidden {
-            let _ = write!(out, "\n  {} {}", item.label, value_text(item.value));
+            let _ = write!(out, "\n  {} {}", item.label, item.text());
+            if item.show_remaining && item.kind != Kind::Hardware && item.value.is_some() {
+                let _ = write!(out, " {}", t(lang, Key::Remaining));
+            }
         }
     }
     for key in setup_hints(hints) {
@@ -309,6 +340,89 @@ pub fn setup_hints(hints: TaskbarHints) -> Vec<Key> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unavailable_limits_stay_missing_in_both_modes() {
+        for remaining in [false, true] {
+            let cfg = Config {
+                show_remaining: remaining,
+                ..Config::default()
+            };
+            for status in [
+                ProviderStatus::Loading,
+                ProviderStatus::Failed(FetchError::Expired),
+                ProviderStatus::Failed(FetchError::Network(String::new())),
+                ProviderStatus::Ok {
+                    usage: ProviderUsage::default(),
+                    at: 0,
+                },
+            ] {
+                let items = build_items(&cfg, &hw(), &status, &status, "", Lang::En);
+                assert!(
+                    items
+                        .iter()
+                        .filter(|i| i.kind != Kind::Hardware)
+                        .all(|i| i.text() == "—")
+                );
+                let tip = tooltip_text(
+                    Lang::En,
+                    &status,
+                    &status,
+                    &items,
+                    TaskbarHints::default(),
+                    0,
+                    remaining,
+                );
+                assert!(
+                    !tip.contains("5h 0%") && !tip.contains("wk 0%") && !tip.contains("0% left"),
+                    "{tip}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn remaining_formatting() {
+        for (used, expected) in [(62.0, "38%"), (0.0, "100%"), (100.0, "0%")] {
+            assert_eq!(value_text(Some(used), true), expected);
+            assert_eq!(value_text(Some(used), false), format!("{used:.0}%"));
+        }
+        for remaining in [false, true] {
+            assert_eq!(value_text(None, remaining), "—");
+        }
+    }
+
+    #[test]
+    fn remaining_tooltips_and_strip_leave_hardware_and_usage_intact() {
+        for (lang, expected) in [(Lang::En, "38% left"), (Lang::PtBr, "38% restante")] {
+            for remaining in [false, true] {
+                let cfg = Config {
+                    show_remaining: remaining,
+                    ..Config::default()
+                };
+                let items = build_items(&cfg, &hw(), &ok(62.0, 100.0), &ok(0.0, 62.0), "", lang);
+                assert_eq!(items[0].text(), "23%");
+                assert_eq!(items[4].value, Some(62.0));
+                assert_eq!(items[4].text(), if remaining { "38%" } else { "62%" });
+                let tip = tooltip_text(
+                    lang,
+                    &ok(62.0, 100.0),
+                    &ok(0.0, 62.0),
+                    &items,
+                    TaskbarHints::default(),
+                    0,
+                    remaining,
+                );
+                assert!(
+                    tip.contains(if remaining { expected } else { "62%" }),
+                    "{tip}"
+                );
+                assert!(tip.contains("CPU 23%"), "{tip}");
+                if remaining {
+                    assert!(tip.contains(&format!("Claude 5h {expected}")), "{tip}");
+                }
+            }
+        }
+    }
     use crate::config::Config;
     use crate::hw::{DiskReading, HwSnapshot};
     use crate::i18n::Lang;
@@ -492,6 +606,7 @@ mod tests {
             &[],
             TaskbarHints::default(),
             1060,
+            false,
         )
     }
 
@@ -517,9 +632,9 @@ mod tests {
 
     #[test]
     fn value_text_never_shows_zero_for_errors() {
-        assert_eq!(value_text(None), "—");
-        assert_eq!(value_text(Some(61.6)), "62%");
-        assert_eq!(value_text(Some(0.0)), "0%");
+        assert_eq!(value_text(None, false), "—");
+        assert_eq!(value_text(Some(61.6), false), "62%");
+        assert_eq!(value_text(Some(0.0), false), "0%");
     }
 
     #[test]
@@ -531,6 +646,7 @@ mod tests {
             &[],
             TaskbarHints::default(),
             0,
+            false,
         );
         assert!(tip.contains("Claude login expired — open Claude Code to renew"));
         assert!(tip.contains("Log in by running `codex login`"));
@@ -544,6 +660,7 @@ mod tests {
             label: "GPU".into(),
             value: Some(12.0),
             dim: false,
+            show_remaining: false,
             badge: None,
         }];
         let tip = tooltip_text(
@@ -557,6 +674,7 @@ mod tests {
                 ..Default::default()
             },
             0,
+            false,
         );
         assert!(!tip.contains("Claude"));
         assert!(tip.contains("Not shown (no room):"));
@@ -577,6 +695,7 @@ mod tests {
             &[],
             TaskbarHints::default(),
             0,
+            false,
         );
         assert!(tip.contains("Claude"));
         assert!(tip.contains("5h: 62%"));
@@ -598,6 +717,7 @@ mod aging_view_tests {
             &[],
             TaskbarHints::default(),
             0,
+            false,
         );
         assert!(tip.contains("No recent data"));
         assert!(!tip.contains("()"));

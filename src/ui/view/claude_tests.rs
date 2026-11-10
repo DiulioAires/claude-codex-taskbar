@@ -38,6 +38,7 @@ fn claude_tip(lang: Lang, status: &ProviderStatus) -> String {
         &[],
         TaskbarHints::default(),
         1793948399 - 4320,
+        false,
     )
 }
 
@@ -150,4 +151,50 @@ fn model_data_does_not_change_strip_items() {
             (ItemId::ClaudeWeek, Some(3.0))
         ]
     );
+}
+
+#[test]
+fn remaining_model_and_cached_values_keep_their_meaning() {
+    for (lang, opus, sonnet) in [
+        (Lang::En, "Opus wk: 28% left", "Sonnet wk: 100% left"),
+        (
+            Lang::PtBr,
+            "Opus sem: 28% restante",
+            "Sonnet sem: 100% restante",
+        ),
+    ] {
+        let status = ProviderStatus::Stale {
+            usage: model_usage(),
+            at: 1000,
+            err: FetchError::Network("timeout".into()),
+        };
+        let tip = tooltip_text(
+            lang,
+            &status,
+            &ProviderStatus::Disabled,
+            &[],
+            TaskbarHints::default(),
+            1000,
+            true,
+        );
+        assert!(tip.contains(opus), "{tip}");
+        assert!(tip.contains(sonnet), "{tip}");
+        assert!(tip.contains("timeout"), "{tip}");
+        let cfg = Config {
+            show_remaining: true,
+            ..Config::default()
+        };
+        let items = build_items(
+            &cfg,
+            &HwSnapshot::default(),
+            &status,
+            &ProviderStatus::Disabled,
+            "",
+            lang,
+        );
+        let item = items.iter().find(|i| i.id == ItemId::ClaudeFive).unwrap();
+        assert_eq!(item.text(), "82%");
+        assert!(item.dim);
+        assert_eq!(item.value, Some(18.0));
+    }
 }

@@ -34,6 +34,8 @@ pub struct Config {
     pub codex_keepalive_asked: bool,
     /// Opt-in notification delivery when subscription usage crosses a threshold (#15).
     pub notify_near_limit: bool,
+    /// Display subscription limits as remaining capacity (#31).
+    pub show_remaining: bool,
     /// Percent-used thresholds, normalized to unique ascending values in 1..=100.
     pub notify_thresholds: Vec<u32>,
     /// Shown before the Claude gauges when the live login is not a saved account with its
@@ -57,6 +59,7 @@ impl Default for Config {
             keep_codex_login: false,
             codex_keepalive_asked: false,
             notify_near_limit: false,
+            show_remaining: false,
             notify_thresholds: DEFAULT_NOTIFY_THRESHOLDS.to_vec(),
             claude_label: DEFAULT_LABEL.into(),
             codex_label: DEFAULT_LABEL.into(),
@@ -188,6 +191,18 @@ mod notify_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn remaining_defaults_off_and_persists() {
+        let old: Config = serde_json::from_str(r#"{"claude_enabled":true}"#).unwrap();
+        assert!(!old.show_remaining);
+        let cfg = Config {
+            show_remaining: true,
+            ..old
+        };
+        let path = temp_file("remaining");
+        cfg.save_to(&path).unwrap();
+        assert_eq!(Config::load_from(&path), cfg);
+    }
 
     #[test]
     fn provider_labels_default_to_p_and_old_configs_get_them() {
@@ -267,6 +282,7 @@ mod tests {
             keep_codex_login: true,
             codex_keepalive_asked: true,
             notify_near_limit: true,
+            show_remaining: true,
             notify_thresholds: vec![75, 90],
             claude_label: "W".into(),
             codex_label: "Pess".into(),

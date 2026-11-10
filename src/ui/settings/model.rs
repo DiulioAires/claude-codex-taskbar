@@ -15,6 +15,7 @@ pub enum Toggle {
     KeepAliveCodex,
     /// Windows balloon when a limit crosses a threshold (#15).
     NotifyNearLimit,
+    ShowRemaining,
 }
 
 /// The config to apply, and the autostart switch when the window has one.
@@ -34,6 +35,7 @@ pub fn apply_toggle(base: &Config, toggle: &Toggle, on: bool) -> Applied {
         Toggle::Codex => cfg.codex_enabled = on,
         Toggle::Item(id) => cfg.set_visible(id, on),
         Toggle::Autostart => autostart = Some(on),
+        Toggle::ShowRemaining => cfg.show_remaining = on,
         Toggle::NotifyNearLimit => cfg.notify_near_limit = on,
         Toggle::KeepAliveClaude => {
             cfg.keep_claude_login = on;
@@ -100,6 +102,28 @@ mod tests {
         assert_eq!(a.autostart, None);
         let a = apply_toggle(&base, &Toggle::Autostart, true);
         assert_eq!((a.cfg, a.autostart), (base.clone(), Some(true)));
+    }
+
+    #[test]
+    fn remaining_toggle_changes_only_display_without_waking_limits() {
+        let base = Config {
+            hw_interval_secs: 3,
+            ..Config::default()
+        };
+        let applied = apply_toggle(&base, &Toggle::ShowRemaining, true);
+        assert_eq!(
+            applied.cfg,
+            Config {
+                show_remaining: true,
+                ..base.clone()
+            }
+        );
+        assert_eq!(applied.autostart, None);
+        assert!(!base.needs_limits_wake(&applied.cfg));
+        assert_eq!(
+            apply_toggle(&applied.cfg, &Toggle::ShowRemaining, false).cfg,
+            base
+        );
     }
 
     #[test]
