@@ -403,7 +403,15 @@ impl App {
         };
         let hints = self.taskbar_hints();
         let (claude, codex) = self.displayed_statuses();
-        let text = tooltip_text(self.lang, &claude, &codex, &hidden, hints, now_unix());
+        let text = tooltip_text(
+            self.lang,
+            &claude,
+            &codex,
+            &hidden,
+            hints,
+            now_unix(),
+            self.cfg.show_remaining,
+        );
         let mut text = text;
         for (kind, enabled, status, keepalive) in [
             (

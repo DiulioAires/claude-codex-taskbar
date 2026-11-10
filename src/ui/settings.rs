@@ -228,6 +228,12 @@ fn check_specs(
         Look::Switch,
         cfg.notify_near_limit,
     ));
+    specs.push((
+        Toggle::ShowRemaining,
+        t(lang, Key::ShowRemaining).to_string(),
+        Look::Switch,
+        cfg.show_remaining,
+    ));
     specs
 }
 
@@ -357,6 +363,14 @@ fn blocks(facts: &Facts, checks: &[(Toggle, String, bool)]) -> Vec<Block> {
             tile: None,
             indent: false,
             state_text: state(&Toggle::Autostart),
+        },
+        Row::Switch {
+            id: id_of(&Toggle::ShowRemaining),
+            title: t(lang, Key::ShowRemaining).to_string(),
+            sub: None,
+            tile: None,
+            indent: false,
+            state_text: state(&Toggle::ShowRemaining),
         },
         Row::Switch {
             id: id_of(&Toggle::NotifyNearLimit),
