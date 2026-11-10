@@ -217,7 +217,8 @@ pub fn run_login_status(kind: Kind) -> bool {
     run_with_timeout(command, Duration::from_millis(RUN_TIMEOUT_MS.into()))
 }
 
-/// Spawns `command` inside a kill-on-close job and waits up to `timeout`; on overrun the
+/// Spawns `command` inside a kill-on-close job and waits up to `timeout`; if the child exits in
+/// time the job limit is cleared so detached background processes survive, whereas on overrun the
 /// whole process tree is killed and the child is reaped.
 fn run_with_timeout(mut command: Command, timeout: Duration) -> bool {
     let Ok(mut child) = command.spawn() else {
@@ -227,7 +228,12 @@ fn run_with_timeout(mut command: Command, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
-            Ok(Some(status)) => return status.success(),
+            Ok(Some(status)) => {
+                if let Some(job) = job {
+                    job.release();
+                }
+                return status.success();
+            }
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(100)),
             _ => {
                 drop(job);
@@ -769,6 +775,74 @@ mod resolve_tests {
         assert!(
             crate::limits::terminal::process_has_exited(pid, 2_000),
             "grandchild process {pid} should be killed with the job"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::zombie_processes)]
+    fn run_with_timeout_releases_job_on_exit_preserving_detached_child() {
+        if let Ok(pid_file) = std::env::var("CCT_KEEPALIVE_DETACHED_PID") {
+            if std::env::var("CCT_KEEPALIVE_DETACHED_WORKER").is_ok() {
+                std::fs::write(pid_file, std::process::id().to_string()).unwrap();
+                std::thread::sleep(Duration::from_secs(60));
+                return;
+            }
+            let exe = std::env::current_exe().unwrap();
+            let _ = Command::new(exe)
+                .args([
+                    "--exact",
+                    "limits::keepalive::resolve_tests::run_with_timeout_releases_job_on_exit_preserving_detached_child",
+                ])
+                .env("CCT_KEEPALIVE_DETACHED_PID", &pid_file)
+                .env("CCT_KEEPALIVE_DETACHED_WORKER", "1")
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            for _ in 0..50 {
+                if Path::new(&pid_file).is_file() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            return;
+        }
+        let base =
+            std::env::temp_dir().join(format!("cct-keepalive-detached-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let pid_file = base.join("detached.pid");
+        let shim = base.join("codex.cmd");
+        let exe = std::env::current_exe().unwrap();
+        let script = format!(
+            "@echo off\r\nset \"CCT_KEEPALIVE_DETACHED_PID={}\"\r\n\"{}\" --exact limits::keepalive::resolve_tests::run_with_timeout_releases_job_on_exit_preserving_detached_child\r\n",
+            pid_file.display(),
+            exe.display()
+        );
+        std::fs::write(&shim, script).unwrap();
+        let cwd = system_dir().unwrap();
+
+        let mut command = login_command(&shim, &["login", "status"], &cwd);
+        command
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        assert!(run_with_timeout(command, Duration::from_secs(5)));
+
+        let pid: u32 = std::fs::read_to_string(&pid_file)
+            .expect("detached worker should write its PID before CLI exits")
+            .trim()
+            .parse()
+            .unwrap();
+        let _ = std::fs::remove_dir_all(&base);
+        let exited_early = crate::limits::terminal::process_has_exited(pid, 100);
+        crate::limits::terminal::terminate_process(pid);
+        assert!(
+            !exited_early,
+            "detached background process {pid} should survive after successful CLI exit"
         );
     }
 }

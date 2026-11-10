@@ -51,7 +51,9 @@ fn raw(h: &OwnedHandle) -> HANDLE {
 ///
 /// Closing the handle (on `Drop`) terminates every process assigned to the job and all of
 /// their descendants, so a timed-out `.cmd` shim cannot leave `node` or the native CLI behind.
-pub struct Job(#[allow(dead_code)] OwnedHandle);
+/// Calling [`Job::release`] before drop clears the limit so detached background children
+/// survive when the command finishes within its timeout.
+pub struct Job(OwnedHandle);
 
 impl Job {
     /// Creates a kill-on-close job and assigns `child` to it.
@@ -78,6 +80,22 @@ impl Job {
         // SAFETY: both `job` and `process` are valid handles.
         unsafe { AssignProcessToJobObject(raw(&job), process) }.ok()?;
         Some(Self(job))
+    }
+
+    /// Clears `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` before closing the job handle, so any
+    /// detached child processes left running after a normal exit are not terminated.
+    pub fn release(self) {
+        let info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        // SAFETY: `self.0` is a valid job handle and `info` (`LimitFlags = 0`) is sized for
+        // `JobObjectExtendedLimitInformation`.
+        let _ = unsafe {
+            SetInformationJobObject(
+                raw(&self.0),
+                JobObjectExtendedLimitInformation,
+                (&raw const info).cast(),
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        };
     }
 }
 
@@ -219,6 +237,9 @@ pub fn run_in_terminal(
     // SAFETY: valid process handle for the whole block.
     let code = unsafe {
         if WaitForSingleObject(raw(&process), timeout_ms) == WAIT_OBJECT_0 {
+            if let Some(job) = job {
+                job.release();
+            }
             let mut code = 0u32;
             GetExitCodeProcess(raw(&process), &mut code)
                 .ok()
@@ -230,7 +251,7 @@ pub fn run_in_terminal(
             None
         }
     };
-    // Closing the job and console ends anything still attached (e.g. the CLI under a `.cmd` shim).
+    // Closing the console ends anything still attached to it.
     drop(attrs);
     drop(pc);
     code
@@ -247,4 +268,21 @@ pub(crate) fn process_has_exited(pid: u32, wait_ms: u32) -> bool {
     let h = unsafe { owned(h) };
     // SAFETY: `h` is a valid process handle with `SYNCHRONIZE` access.
     unsafe { WaitForSingleObject(raw(&h), wait_ms) == WAIT_OBJECT_0 }
+}
+
+#[cfg(test)]
+pub(crate) fn terminate_process(pid: u32) {
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE};
+    // SAFETY: opens the test child process by PID so the test can clean it up.
+    let Ok(h) = (unsafe { OpenProcess(PROCESS_TERMINATE | PROCESS_SYNCHRONIZE, false, pid) })
+    else {
+        return;
+    };
+    // SAFETY: `h` was just returned by `OpenProcess` and is owned here.
+    let h = unsafe { owned(h) };
+    // SAFETY: `h` is a valid process handle with `PROCESS_TERMINATE` and `SYNCHRONIZE` access.
+    unsafe {
+        let _ = TerminateProcess(raw(&h), 1);
+        WaitForSingleObject(raw(&h), REAP_MS);
+    }
 }
