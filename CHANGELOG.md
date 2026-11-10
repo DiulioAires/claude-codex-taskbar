@@ -12,6 +12,9 @@ All notable changes to this project are documented here. The format follows
   each, instead of loading whole files and walking the entire history. Less memory and disk
   work on every refresh while offline, and much less conversation content passes through
   memory (#3).
+- **Fewer `codex` processes during long outages.** After the `codex app-server` fallback fails,
+  CCT skips it for 5 minutes, doubling up to 30, and goes straight to the session logs. Any
+  live reading resets the wait (#63).
 
 ## [0.4.2] - 2026-11-10
 

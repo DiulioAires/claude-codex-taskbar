@@ -474,9 +474,7 @@ pub(crate) fn claude_provider() -> ClaudeProvider {
 }
 
 pub(crate) fn codex_provider() -> CodexProvider {
-    CodexProvider {
-        home: CodexProvider::default_home(),
-    }
+    CodexProvider::new(CodexProvider::default_home())
 }
 
 /// Starts the limits thread; results queue in the returned inbox and `WM_APP_LIMITS`

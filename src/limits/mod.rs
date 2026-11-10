@@ -1,5 +1,6 @@
 //! Subscription limit types shared by the Claude and Codex providers.
 
+pub mod backoff;
 pub mod claude;
 pub mod codex;
 pub mod http;

@@ -4,6 +4,7 @@
 //! JSON-RPC `app-server` (`account/rateLimits/read`) is queried over stdio; if that also fails,
 //! the newest `rate_limits` event the CLI wrote to its session logs is used if it has not reset.
 
+use super::backoff::Backoff;
 use super::http::get_json;
 use super::keepalive::{CREATE_NO_WINDOW, candidate_dirs, resolve_cli, system_dir};
 use super::terminal::Job;
@@ -11,6 +12,7 @@ use super::{FetchError, Provider, ProviderUsage, WindowUsage};
 use crate::model::Kind;
 use crate::timeutil::{now_unix, parse_rfc3339};
 use serde_json::Value;
+use std::cell::Cell;
 use std::io::{BufRead, BufReader, Write};
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -332,12 +334,20 @@ pub fn latest_session_limits(sessions_dir: &Path, now: i64) -> Option<(ProviderU
 
 pub struct CodexProvider {
     pub home: PathBuf,
+    app_server_backoff: Cell<Backoff>,
 }
 
 /// Result of a Codex fetch: usage, whether it came from session logs, and its timestamp.
 pub type CodexFetch = (ProviderUsage, bool, i64);
 
 impl CodexProvider {
+    pub fn new(home: PathBuf) -> Self {
+        CodexProvider {
+            home,
+            app_server_backoff: Cell::new(Backoff::default()),
+        }
+    }
+
     /// `%CODEX_HOME%`, or `%USERPROFILE%\.codex`.
     pub fn default_home() -> PathBuf {
         if let Some(home) = std::env::var_os("CODEX_HOME").filter(|h| !h.is_empty()) {
@@ -356,7 +366,8 @@ impl CodexProvider {
     }
 
     /// Falls back to `codex app-server` and then session logs only for transient failures,
-    /// never for auth problems.
+    /// never for auth problems. After an app-server failure that tier is skipped for a
+    /// doubling back-off, reset by any live success.
     pub fn fetch_with_fallback(&self, now: i64) -> Result<CodexFetch, FetchError> {
         self.fetch_with_tiers(now, |now| self.fetch_at(now), || self.fetch_app_server())
     }
@@ -368,10 +379,20 @@ impl CodexProvider {
         app_server: impl FnOnce() -> Result<ProviderUsage, FetchError>,
     ) -> Result<CodexFetch, FetchError> {
         match http(now) {
-            Ok(usage) => Ok((usage, false, now)),
+            Ok(usage) => {
+                self.app_server_backoff.set(Backoff::default());
+                Ok((usage, false, now))
+            }
             Err(err @ (FetchError::Network(_) | FetchError::BadResponse(_))) => {
-                if let Ok(usage) = app_server() {
-                    return Ok((usage, false, now));
+                let backoff = self.app_server_backoff.get();
+                if backoff.allows(now) {
+                    match app_server() {
+                        Ok(usage) => {
+                            self.app_server_backoff.set(Backoff::default());
+                            return Ok((usage, false, now));
+                        }
+                        Err(_) => self.app_server_backoff.set(backoff.failed(now)),
+                    }
                 }
                 latest_session_limits(&self.home.join("sessions"), now)
                     .map(|(usage, at)| (usage, true, at))
@@ -996,7 +1017,7 @@ mod tests {
     fn fallback_chain_prefers_http_then_app_server_then_session_logs() {
         let dir = sessions_dir("tiers", SESSION);
         let home = dir.parent().unwrap().to_path_buf();
-        let provider = CodexProvider { home };
+        let provider = CodexProvider::new(home);
         let now = 1793000000;
 
         let sample = |pct: f32| ProviderUsage {
@@ -1065,12 +1086,82 @@ mod tests {
         assert_eq!(err, FetchError::Expired);
     }
 
+    fn live_sample() -> ProviderUsage {
+        ProviderUsage {
+            five_hour: Some(WindowUsage {
+                used_pct: 10.0,
+                resets_at: Some(1793385254),
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn app_server_is_skipped_while_backing_off() {
+        let dir = sessions_dir("backoff", SESSION);
+        let provider = CodexProvider::new(dir.parent().unwrap().to_path_buf());
+        let calls = Cell::new(0);
+        let http_down = |_: i64| Err(FetchError::Network("http down".into()));
+        let app_fails = || {
+            calls.set(calls.get() + 1);
+            Err(FetchError::Network("app-server failed".into()))
+        };
+        let fetch_at = |now: i64| provider.fetch_with_tiers(now, http_down, app_fails);
+        let t0 = SESSION_NOW;
+
+        let (_, from_session, _) = fetch_at(t0).unwrap();
+        assert!(from_session);
+        assert_eq!(calls.get(), 1);
+
+        fetch_at(t0 + 5 * 60 - 1).unwrap();
+        assert_eq!(calls.get(), 1, "skipped inside the first 5 min");
+
+        let t1 = t0 + 5 * 60;
+        fetch_at(t1).unwrap();
+        assert_eq!(calls.get(), 2);
+        fetch_at(t1 + 10 * 60 - 1).unwrap();
+        assert_eq!(calls.get(), 2, "second failure doubles the wait");
+
+        provider
+            .fetch_with_tiers(t1 + 60, |_| Ok(live_sample()), app_fails)
+            .unwrap();
+        fetch_at(t1 + 61).unwrap();
+        assert_eq!(calls.get(), 3, "an HTTP success resets the back-off");
+    }
+
+    #[test]
+    fn app_server_success_resets_the_backoff() {
+        let dir = sessions_dir("backoff-reset", SESSION);
+        let provider = CodexProvider::new(dir.parent().unwrap().to_path_buf());
+        let calls = Cell::new(0);
+        let http_down = |_: i64| Err(FetchError::Network("http down".into()));
+        let app_fails = || {
+            calls.set(calls.get() + 1);
+            Err(FetchError::Network("app-server failed".into()))
+        };
+        let t0 = SESSION_NOW;
+
+        provider.fetch_with_tiers(t0, http_down, app_fails).unwrap();
+        let t1 = t0 + 5 * 60;
+        let (_, from_session, _) = provider
+            .fetch_with_tiers(t1, http_down, || Ok(live_sample()))
+            .unwrap();
+        assert!(!from_session);
+
+        provider
+            .fetch_with_tiers(t1 + 1, http_down, app_fails)
+            .unwrap();
+        assert_eq!(calls.get(), 2);
+        provider
+            .fetch_with_tiers(t1 + 1 + 5 * 60, http_down, app_fails)
+            .unwrap();
+        assert_eq!(calls.get(), 3, "back to a 5 min wait, not 20");
+    }
+
     #[test]
     #[ignore = "calls the real endpoint with the local login"]
     fn live_codex() {
-        let p = CodexProvider {
-            home: CodexProvider::default_home(),
-        };
+        let p = CodexProvider::new(CodexProvider::default_home());
         let u = crate::limits::Provider::fetch(&p).expect("live fetch");
         assert!(u.five_hour.is_some() || u.weekly.is_some());
     }
@@ -1078,9 +1169,7 @@ mod tests {
     #[test]
     #[ignore = "runs the locally installed Codex CLI app-server"]
     fn live_codex_app_server() {
-        let p = CodexProvider {
-            home: CodexProvider::default_home(),
-        };
+        let p = CodexProvider::new(CodexProvider::default_home());
         let u = p.fetch_app_server().expect("live app-server fetch");
         assert!(u.five_hour.is_some() || u.weekly.is_some());
     }
