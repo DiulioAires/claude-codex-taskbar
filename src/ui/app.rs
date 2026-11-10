@@ -336,6 +336,7 @@ impl App {
         }
         info.icons_left = self.icons.value();
         let dpi = info.dpi;
+        let now = now_unix();
         let (claude, codex) = self.displayed_statuses();
         self.items = build_items(
             &self.cfg,
@@ -344,6 +345,7 @@ impl App {
             &codex,
             &self.claude_label,
             self.lang,
+            now,
         );
         let margin = to_px(MARGIN_DIP, dpi);
         let key = FrameKey {

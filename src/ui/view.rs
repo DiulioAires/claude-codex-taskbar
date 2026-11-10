@@ -3,7 +3,10 @@
 use crate::config::Config;
 use crate::hw::HwSnapshot;
 use crate::i18n::{Key, Lang, fmt, fmt2, t};
-use crate::limits::{FetchError, ModelKind, ProviderStatus, ProviderUsage, WindowUsage};
+use crate::limits::{
+    FIVE_HOUR_SECS, FetchError, ModelKind, ProviderStatus, ProviderUsage, WEEK_SECS, WindowUsage,
+    elapsed_fraction,
+};
 use crate::model::{ItemId, Kind};
 use crate::timeutil::{format_local_day_hhmm, format_local_hhmm};
 use std::fmt::Write;
@@ -22,6 +25,9 @@ pub struct ItemView {
     /// Account label drawn before this item, in the provider's color (#74). Set on the
     /// first visible item of each provider so it hides together with that provider.
     pub badge: Option<String>,
+    /// Elapsed fraction (`0.0..=1.0`) of the window for the pace tick on the bar (#14).
+    /// `None` for hardware, error/stale/session states, or when `resets_at` is absent/expired.
+    pub tick: Option<f32>,
 }
 
 /// Taskbar facts that decide which setup hints apply.
@@ -58,6 +64,19 @@ fn usage_of(status: &ProviderStatus) -> Option<(&ProviderUsage, bool)> {
     }
 }
 
+fn window_tick(
+    status: &ProviderStatus,
+    w: Option<&WindowUsage>,
+    window_len: i64,
+    now: i64,
+) -> Option<f32> {
+    if !matches!(status, ProviderStatus::Ok { .. }) {
+        return None;
+    }
+    let f = elapsed_fraction(w?.resets_at, window_len, now)?;
+    Some(((f * 1000.0).round() / 1000.0) as f32)
+}
+
 /// `claude_label` is the live Claude account's label (it depends on the saved accounts);
 /// the Codex label comes from `cfg`.
 pub fn build_items(
@@ -67,9 +86,15 @@ pub fn build_items(
     codex: &ProviderStatus,
     claude_label: &str,
     lang: Lang,
+    now: i64,
 ) -> Vec<ItemView> {
     let mut items = Vec::new();
-    let mut push = |id: ItemId, kind: Kind, label: String, value: Option<f32>, dim: bool| {
+    let mut push = |id: ItemId,
+                    kind: Kind,
+                    label: String,
+                    value: Option<f32>,
+                    dim: bool,
+                    tick: Option<f32>| {
         if cfg.is_visible(&id) {
             items.push(ItemView {
                 id,
@@ -79,12 +104,34 @@ pub fn build_items(
                 dim,
                 show_remaining: cfg.show_remaining,
                 badge: None,
+                tick,
             });
         }
     };
-    push(ItemId::Cpu, Kind::Hardware, "CPU".into(), hw.cpu, false);
-    push(ItemId::Ram, Kind::Hardware, "RAM".into(), hw.ram, false);
-    push(ItemId::Gpu, Kind::Hardware, "GPU".into(), hw.gpu, false);
+    push(
+        ItemId::Cpu,
+        Kind::Hardware,
+        "CPU".into(),
+        hw.cpu,
+        false,
+        None,
+    );
+    push(
+        ItemId::Ram,
+        Kind::Hardware,
+        "RAM".into(),
+        hw.ram,
+        false,
+        None,
+    );
+    push(
+        ItemId::Gpu,
+        Kind::Hardware,
+        "GPU".into(),
+        hw.gpu,
+        false,
+        None,
+    );
     for d in &hw.disks {
         let id = ItemId::Disk(d.instance.clone());
         push(
@@ -93,6 +140,7 @@ pub fn build_items(
             d.label.clone(),
             Some(d.active_pct),
             false,
+            None,
         );
     }
     let providers = [
@@ -117,16 +165,25 @@ pub fn build_items(
         }
         let usage = usage_of(status);
         let dim = usage.is_some_and(|(_, dim)| dim);
-        let pct = |w: fn(&ProviderUsage) -> &Option<WindowUsage>| {
-            usage.and_then(|(u, _)| w(u).as_ref()).map(|w| w.used_pct)
-        };
-        push(five_id, kind, five_label.into(), pct(|u| &u.five_hour), dim);
+        let win =
+            |w: fn(&ProviderUsage) -> &Option<WindowUsage>| usage.and_then(|(u, _)| w(u).as_ref());
+        let five = win(|u| &u.five_hour);
+        let week = win(|u| &u.weekly);
+        push(
+            five_id,
+            kind,
+            five_label.into(),
+            five.map(|w| w.used_pct),
+            dim,
+            window_tick(status, five, FIVE_HOUR_SECS, now),
+        );
         push(
             week_id,
             kind,
             t(lang, Key::LabelWeek).into(),
-            pct(|u| &u.weekly),
+            week.map(|w| w.used_pct),
             dim,
+            window_tick(status, week, WEEK_SECS, now),
         );
     }
     for (kind, label) in [
@@ -356,7 +413,7 @@ mod tests {
                     at: 0,
                 },
             ] {
-                let items = build_items(&cfg, &hw(), &status, &status, "", Lang::En);
+                let items = build_items(&cfg, &hw(), &status, &status, "", Lang::En, 0);
                 assert!(
                     items
                         .iter()
@@ -399,7 +456,7 @@ mod tests {
                     show_remaining: remaining,
                     ..Config::default()
                 };
-                let items = build_items(&cfg, &hw(), &ok(62.0, 100.0), &ok(0.0, 62.0), "", lang);
+                let items = build_items(&cfg, &hw(), &ok(62.0, 100.0), &ok(0.0, 62.0), "", lang, 0);
                 assert_eq!(items[0].text(), "23%");
                 assert_eq!(items[4].value, Some(62.0));
                 assert_eq!(items[4].text(), if remaining { "38%" } else { "62%" });
@@ -482,7 +539,15 @@ mod tests {
             codex_label: "W".into(),
             ..Config::default()
         };
-        let items = build_items(&cfg, &hw(), &ok(1.0, 2.0), &ok(3.0, 4.0), "Pess", Lang::En);
+        let items = build_items(
+            &cfg,
+            &hw(),
+            &ok(1.0, 2.0),
+            &ok(3.0, 4.0),
+            "Pess",
+            Lang::En,
+            0,
+        );
         assert_eq!(
             badges(&items),
             [
@@ -511,6 +576,7 @@ mod tests {
             &ProviderStatus::Disabled,
             "P",
             Lang::En,
+            0,
         );
         assert_eq!(badges(&items), [(ItemId::ClaudeWeek, Some("P"))]);
     }
@@ -521,7 +587,7 @@ mod tests {
             codex_label: String::new(),
             ..Config::default()
         };
-        let items = build_items(&cfg, &hw(), &ok(1.0, 2.0), &ok(3.0, 4.0), "", Lang::En);
+        let items = build_items(&cfg, &hw(), &ok(1.0, 2.0), &ok(3.0, 4.0), "", Lang::En, 0);
         assert!(items.iter().all(|i| i.badge.is_none()));
     }
 
@@ -538,6 +604,7 @@ mod tests {
             &ProviderStatus::Disabled,
             "P",
             Lang::PtBr,
+            0,
         );
         let labels: Vec<_> = items.iter().map(|i| i.label.as_str()).collect();
         assert_eq!(labels, ["CPU", "RAM", "GPU", "C:", "Claude 5h", "sem"]);
@@ -563,6 +630,7 @@ mod tests {
             &codex,
             "P",
             Lang::En,
+            0,
         );
         let ids: Vec<_> = items.iter().map(|i| i.id.clone()).collect();
         assert_eq!(
@@ -584,7 +652,7 @@ mod tests {
             at: 0,
             err: FetchError::Network("x".into()),
         };
-        let items = build_items(&Config::default(), &hw(), &claude, &codex, "P", Lang::En);
+        let items = build_items(&Config::default(), &hw(), &claude, &codex, "P", Lang::En, 0);
         let claude5 = items.iter().find(|i| i.id == ItemId::ClaudeFive).unwrap();
         assert_eq!(claude5.value, None);
         assert!(!claude5.dim);
@@ -662,6 +730,7 @@ mod tests {
             dim: false,
             show_remaining: false,
             badge: None,
+            tick: None,
         }];
         let tip = tooltip_text(
             Lang::En,
@@ -700,6 +769,89 @@ mod tests {
         assert!(tip.contains("Claude"));
         assert!(tip.contains("5h: 62%"));
         assert!(tip.contains("wk: 34%"));
+    }
+
+    #[test]
+    fn tick_marks_elapsed_window_fraction_only_on_fresh_ok_with_future_reset() {
+        let now = 1_800_000_000;
+        let timed = ProviderUsage {
+            five_hour: Some(WindowUsage {
+                used_pct: 60.0,
+                resets_at: Some(now + FIVE_HOUR_SECS / 2),
+            }),
+            weekly: Some(WindowUsage {
+                used_pct: 93.0,
+                resets_at: Some(now + WEEK_SECS * 3 / 4),
+            }),
+            ..Default::default()
+        };
+        let ok_status = ProviderStatus::Ok {
+            usage: timed.clone(),
+            at: now,
+        };
+        let items = build_items(
+            &Config::default(),
+            &hw(),
+            &ok_status,
+            &ProviderStatus::Disabled,
+            "P",
+            Lang::En,
+            now,
+        );
+        assert!(
+            items
+                .iter()
+                .filter(|i| i.kind == Kind::Hardware)
+                .all(|i| i.tick.is_none())
+        );
+        let five = items.iter().find(|i| i.id == ItemId::ClaudeFive).unwrap();
+        let week = items.iter().find(|i| i.id == ItemId::ClaudeWeek).unwrap();
+        assert_eq!(five.tick, Some(0.5));
+        assert_eq!(week.tick, Some(0.25));
+
+        // Missing resets_at, past resets_at, Stale, FromSession, Loading, Failed -> no tick.
+        for non_tick_status in [
+            ok(60.0, 93.0),
+            ProviderStatus::Ok {
+                usage: ProviderUsage {
+                    five_hour: Some(WindowUsage {
+                        used_pct: 60.0,
+                        resets_at: Some(now),
+                    }),
+                    weekly: Some(WindowUsage {
+                        used_pct: 93.0,
+                        resets_at: Some(now - 10),
+                    }),
+                    ..Default::default()
+                },
+                at: now,
+            },
+            ProviderStatus::Stale {
+                usage: timed.clone(),
+                at: now,
+                err: FetchError::Network("timeout".into()),
+            },
+            ProviderStatus::FromSession {
+                usage: timed,
+                at: now,
+            },
+            ProviderStatus::Loading,
+            ProviderStatus::Failed(FetchError::Expired),
+        ] {
+            let items = build_items(
+                &Config::default(),
+                &hw(),
+                &non_tick_status,
+                &ProviderStatus::Disabled,
+                "P",
+                Lang::En,
+                now,
+            );
+            assert!(
+                items.iter().all(|i| i.tick.is_none()),
+                "unexpected tick for {non_tick_status:?}: {items:?}"
+            );
+        }
     }
 }
 

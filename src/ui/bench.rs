@@ -41,7 +41,7 @@ fn idle_cost() {
     let mut renderer = Renderer::new().expect("renderer");
     let loading = ProviderStatus::Loading;
     let cfg = Config::default();
-    let items = build_items(&cfg, &hw, &loading, &loading, "P", Lang::En);
+    let items = build_items(&cfg, &hw, &loading, &loading, "P", Lang::En, 0);
     let metrics = renderer.measure(&items, dpi);
     let kinds: Vec<_> = items.iter().map(|i| i.kind).zip(metrics.clone()).collect();
     let l = layout(

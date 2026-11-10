@@ -51,6 +51,7 @@ mod tests {
                 dim: false,
                 show_remaining: false,
                 badge: None,
+                tick: None,
             }],
             taskbar: Rect {
                 left: 0,

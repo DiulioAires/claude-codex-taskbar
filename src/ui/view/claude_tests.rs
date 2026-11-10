@@ -138,6 +138,7 @@ fn model_data_does_not_change_strip_items() {
         &ProviderStatus::Disabled,
         "P",
         Lang::En,
+        1000,
     );
     let limits: Vec<_> = items
         .iter()
@@ -191,6 +192,7 @@ fn remaining_model_and_cached_values_keep_their_meaning() {
             &ProviderStatus::Disabled,
             "",
             lang,
+            1000,
         );
         let item = items.iter().find(|i| i.id == ItemId::ClaudeFive).unwrap();
         assert_eq!(item.text(), "82%");

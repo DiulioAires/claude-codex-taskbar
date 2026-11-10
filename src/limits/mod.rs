@@ -73,3 +73,60 @@ pub trait Provider: Send {
     fn fetch(&self) -> Result<ProviderUsage, FetchError>;
     fn has_login(&self) -> bool;
 }
+
+pub const FIVE_HOUR_SECS: i64 = 5 * 60 * 60;
+pub const WEEK_SECS: i64 = 7 * 24 * 60 * 60;
+
+/// Fraction of `window_len` (`0.0..=1.0`) that has elapsed at `now`, or `None` when
+/// `resets_at` is missing or has already passed (#14).
+pub fn elapsed_fraction(resets_at: Option<i64>, window_len: i64, now: i64) -> Option<f64> {
+    if window_len <= 0 {
+        return None;
+    }
+    let remaining = resets_at?.checked_sub(now)?;
+    if remaining <= 0 {
+        return None;
+    }
+    let elapsed = window_len.saturating_sub(remaining).max(0);
+    Some((elapsed as f64 / window_len as f64).clamp(0.0, 1.0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NOW: i64 = 1_800_000_000;
+
+    #[test]
+    fn elapsed_fraction_covers_both_windows_and_edge_cases() {
+        for len in [FIVE_HOUR_SECS, WEEK_SECS] {
+            let cases = [
+                (None, None),
+                (Some(NOW - 1), None),
+                (Some(NOW), None),
+                (Some(NOW + len), Some(0.0)),
+                (Some(NOW + len + 10), Some(0.0)),
+                (Some(NOW + len * 3 / 4), Some(0.25)),
+                (Some(NOW + len / 2), Some(0.5)),
+                (Some(NOW + len / 4), Some(0.75)),
+            ];
+            for (reset, expected) in cases {
+                let got = elapsed_fraction(reset, len, NOW);
+                match (got, expected) {
+                    (Some(a), Some(b)) => {
+                        assert!(
+                            (a - b).abs() < 1e-9,
+                            "len={len} reset={reset:?}: {a} != {b}"
+                        )
+                    }
+                    (a, b) => assert_eq!(a, b, "len={len} reset={reset:?}"),
+                }
+            }
+            let near_end = elapsed_fraction(Some(NOW + 1), len, NOW).unwrap();
+            assert!(near_end > 0.999 && near_end < 1.0);
+        }
+        assert_eq!(elapsed_fraction(Some(NOW + 60), 0, NOW), None);
+        assert_eq!(elapsed_fraction(Some(NOW + 60), -10, NOW), None);
+        assert_eq!(elapsed_fraction(Some(i64::MAX), FIVE_HOUR_SECS, -1), None);
+    }
+}

@@ -37,6 +37,8 @@ const BAR_W: f32 = 30.0;
 const BAR_H: f32 = 5.0;
 const BAR_RADIUS: f32 = 2.5;
 const BAR_GAP: f32 = 2.0;
+const TICK_W: f32 = 1.0;
+const TICK_OVERHANG: f32 = 1.0;
 pub const GAP: f32 = 10.0;
 pub const SEP_W: f32 = 1.0;
 const SEP_H: f32 = 30.0;
@@ -100,6 +102,8 @@ struct Surface {
     old: HGDIOBJ,
     rt: ID2D1DCRenderTarget,
     brush: ID2D1SolidColorBrush,
+    #[cfg(test)]
+    bits: *const u32,
 }
 
 impl Surface {
@@ -163,6 +167,8 @@ impl Surface {
                     old,
                     rt,
                     brush,
+                    #[cfg(test)]
+                    bits: bits as *const u32,
                 }),
                 Err(err) => {
                     SelectObject(mem, old);
@@ -458,6 +464,21 @@ impl Renderer {
                     );
                     rt.FillRoundedRectangle(&bar(bx + BAR_W * v.clamp(0.0, 100.0) / 100.0), brush);
                 }
+                if let Some(t) = item.tick {
+                    let tw = to_dip(to_px(TICK_W, dpi), dpi);
+                    let raw_x = bx + (BAR_W - tw) * t.clamp(0.0, 1.0);
+                    let tx = to_dip((raw_x * dpi as f32 / 96.0).round() as i32, dpi);
+                    set(palette.value, 1.0);
+                    rt.FillRectangle(
+                        &D2D_RECT_F {
+                            left: tx,
+                            top: y - TICK_OVERHANG,
+                            right: tx + tw,
+                            bottom: y + BAR_H + TICK_OVERHANG,
+                        },
+                        brush,
+                    );
+                }
                 x += col_w;
                 if layout.separator_after == Some(i) {
                     x += GAP;
@@ -494,6 +515,77 @@ impl Renderer {
                 );
             }
             rt.EndDraw(None, None)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{ItemId, Kind};
+    use crate::ui::layout::layout;
+
+    fn render_pixels(
+        renderer: &Renderer,
+        items: &[ItemView],
+        dpi: u32,
+        light: bool,
+    ) -> (i32, i32, Vec<u32>) {
+        let metrics = renderer.measure(items, dpi);
+        let kinds: Vec<_> = items.iter().map(|i| i.kind).zip(metrics.clone()).collect();
+        let l = layout(
+            &kinds,
+            4000,
+            to_px(GAP, dpi),
+            to_px(SEP_W, dpi),
+            renderer.ellipsis_px(dpi),
+        );
+        let (w, h) = (l.width.max(1), to_px(48.0, dpi));
+        let surface = Surface::new(&renderer.d2d, w, h, dpi).expect("surface");
+        unsafe {
+            renderer
+                .draw(&surface, items, &metrics, &l, light)
+                .expect("draw");
+            let px = std::slice::from_raw_parts(surface.bits, (w * h) as usize).to_vec();
+            (w, h, px)
+        }
+    }
+
+    #[test]
+    fn draw_renders_tick_marker_at_100_and_150_dpi() {
+        let renderer = Renderer::new().expect("renderer");
+        let base = ItemView {
+            id: ItemId::ClaudeFive,
+            kind: Kind::Claude,
+            label: "Claude 5h".into(),
+            badge: None,
+            value: Some(36.0),
+            tick: None,
+            dim: false,
+            show_remaining: false,
+        };
+        let mut with_tick = base.clone();
+        with_tick.tick = Some(0.5);
+
+        for dpi in [96u32, 144u32] {
+            for (light, expected_rgb) in [(false, DARK.value), (true, LIGHT.value)] {
+                let (w, h, px_no_tick) =
+                    render_pixels(&renderer, std::slice::from_ref(&base), dpi, light);
+                let (_, _, px_with_tick) =
+                    render_pixels(&renderer, std::slice::from_ref(&with_tick), dpi, light);
+                let expected_argb = 0xff00_0000 | expected_rgb;
+                let diff_expected: usize = px_no_tick
+                    .iter()
+                    .zip(&px_with_tick)
+                    .filter(|(a, b)| a != b && **b == expected_argb)
+                    .count();
+                let min_px = ((BAR_H + 2.0 * TICK_OVERHANG) * dpi as f32 / 96.0).floor() as usize
+                    * to_px(TICK_W, dpi) as usize;
+                assert!(
+                    diff_expected >= min_px,
+                    "dpi={dpi} light={light}: expected at least {min_px} new {expected_argb:#x} tick pixels, got {diff_expected} (size {w}x{h})"
+                );
+            }
         }
     }
 }
