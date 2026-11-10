@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- **Lighter Codex offline fallback.** When CCT falls back to the Codex session logs, it now
+  opens only the 20 newest logs changed in the last 7 days and reads just the last 256 KB of
+  each, instead of loading whole files and walking the entire history. Less memory and disk
+  work on every refresh while offline, and much less conversation content passes through
+  memory (#3).
+
 ## [0.4.2] - 2026-11-10
 
 ### Changed

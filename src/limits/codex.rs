@@ -239,37 +239,80 @@ fn session_line_limits(line: &str) -> Option<(ProviderUsage, i64)> {
     Some((usage, at))
 }
 
-/// Newest-first walk of `sessions/YYYY/MM/DD/*.jsonl`; stops at the first file with limits.
-fn newest_session_limits(dir: &Path) -> Option<(ProviderUsage, i64)> {
-    let mut entries: Vec<_> = std::fs::read_dir(dir).ok()?.flatten().collect();
-    entries.sort_by_key(|e| {
-        let modified = e.metadata().and_then(|m| m.modified()).ok();
-        std::cmp::Reverse((modified, e.file_name()))
-    });
-    for entry in entries {
-        let path = entry.path();
-        let found = if path.is_dir() {
-            newest_session_limits(&path)
-        } else if path.extension().is_some_and(|x| x == "jsonl") {
-            std::fs::read_to_string(&path).ok().and_then(|text| {
-                text.lines()
-                    .rev()
-                    .filter(|l| l.contains("\"rate_limits\""))
-                    .find_map(session_line_limits)
-            })
-        } else {
-            None
+/// Older logs can't hold a live window: the weekly limit has reset since.
+const SESSION_MAX_AGE_SECS: i64 = 7 * 24 * 60 * 60;
+const SESSION_MAX_FILES: usize = 20;
+const SESSION_TAIL_BYTES: u64 = 256 * 1024;
+/// `sessions/YYYY/MM/DD/*.jsonl`, plus one spare level.
+const SESSION_MAX_DEPTH: usize = 4;
+
+fn unix_mtime(meta: &std::fs::Metadata) -> Option<i64> {
+    let modified = meta.modified().ok()?;
+    let secs = modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    i64::try_from(secs).ok()
+}
+
+/// Lists `*.jsonl` files modified at or after `cutoff`, from directory metadata only.
+/// Symlinks are not followed.
+fn collect_recent_sessions(dir: &Path, cutoff: i64, depth: usize, out: &mut Vec<(i64, PathBuf)>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
         };
-        if found.is_some() {
-            return found;
+        let path = entry.path();
+        if file_type.is_dir() {
+            if depth > 0 {
+                collect_recent_sessions(&path, cutoff, depth - 1, out);
+            }
+        } else if file_type.is_file() && path.extension().is_some_and(|x| x == "jsonl") {
+            let mtime = entry.metadata().ok().as_ref().and_then(unix_mtime);
+            if let Some(mtime) = mtime.filter(|&m| m >= cutoff) {
+                out.push((mtime, path));
+            }
         }
     }
-    None
+}
+
+/// Reads at most the last `max_bytes` of a file, without the partial line the cut leaves.
+fn read_tail(path: &Path, max_bytes: u64) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let start = len.saturating_sub(max_bytes);
+    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut buf = Vec::with_capacity(usize::try_from(len - start).ok()?);
+    file.take(max_bytes).read_to_end(&mut buf).ok()?;
+    if start > 0 {
+        let first_newline = buf.iter().position(|&b| b == b'\n')?;
+        buf.drain(..=first_newline);
+    }
+    Some(String::from_utf8_lossy(&buf).into_owned())
+}
+
+/// Newest `rate_limits` line among recent session logs, scanning only each file's tail.
+fn newest_session_limits(dir: &Path, now: i64) -> Option<(ProviderUsage, i64)> {
+    let mut files = Vec::new();
+    let cutoff = now.saturating_sub(SESSION_MAX_AGE_SECS);
+    collect_recent_sessions(dir, cutoff, SESSION_MAX_DEPTH, &mut files);
+    files.sort_unstable_by(|a, b| b.cmp(a));
+    files.iter().take(SESSION_MAX_FILES).find_map(|(_, path)| {
+        let tail = read_tail(path, SESSION_TAIL_BYTES)?;
+        tail.lines()
+            .rev()
+            .filter(|l| l.contains("\"rate_limits\""))
+            .find_map(session_line_limits)
+    })
 }
 
 /// Last limits the CLI logged, with windows whose reset time has passed removed.
 pub fn latest_session_limits(sessions_dir: &Path, now: i64) -> Option<(ProviderUsage, i64)> {
-    let (mut usage, at) = newest_session_limits(sessions_dir)?;
+    let (mut usage, at) = newest_session_limits(sessions_dir, now)?;
     let still_valid = |w: &Option<WindowUsage>| {
         w.as_ref()
             .and_then(|w| w.resets_at)
@@ -600,6 +643,86 @@ mod tests {
                 resets_at: Some(ts + 100)
             })
         );
+    }
+
+    const SESSION_NOW: i64 = 1793000000;
+
+    fn set_mtime(path: &Path, unix: i64) {
+        let at = std::time::UNIX_EPOCH + Duration::from_secs(unix as u64);
+        let file = std::fs::File::options().write(true).open(path).unwrap();
+        file.set_modified(at).unwrap();
+    }
+
+    fn day_dir(sessions: &Path) -> PathBuf {
+        sessions.join("2026").join("10").join("26")
+    }
+
+    /// Session-log lines with no limits, at least `bytes` long in total.
+    fn filler(bytes: usize) -> String {
+        let line = format!(
+            r#"{{"timestamp":"2026-10-26T15:58:00Z","type":"response_item","payload":{{"type":"message","text":"{}"}}}}"#,
+            "x".repeat(1000)
+        );
+        let mut out = String::new();
+        while out.len() < bytes {
+            out.push_str(&line);
+            out.push('\n');
+        }
+        out
+    }
+
+    #[test]
+    fn session_fallback_skips_old_files() {
+        let dir = sessions_dir("old", SESSION);
+        let file = day_dir(&dir).join("rollout-FAKE.jsonl");
+        set_mtime(&file, SESSION_NOW - SESSION_MAX_AGE_SECS - 60);
+        assert!(latest_session_limits(&dir, SESSION_NOW).is_none());
+
+        set_mtime(&file, SESSION_NOW - SESSION_MAX_AGE_SECS + 60);
+        assert!(latest_session_limits(&dir, SESSION_NOW).is_some());
+    }
+
+    #[test]
+    fn session_fallback_finds_limits_near_the_end_of_a_large_file() {
+        let content = format!("{}{SESSION}", filler(4 * SESSION_TAIL_BYTES as usize));
+        let dir = sessions_dir("large-end", &content);
+        let (u, _) = latest_session_limits(&dir, SESSION_NOW).unwrap();
+        assert_eq!(u.five_hour.unwrap().used_pct, 44.0);
+    }
+
+    #[test]
+    fn session_fallback_reads_only_the_tail_of_a_large_file() {
+        let content = format!("{SESSION}{}", filler(2 * SESSION_TAIL_BYTES as usize));
+        let dir = sessions_dir("large-start", &content);
+        assert!(latest_session_limits(&dir, SESSION_NOW).is_none());
+    }
+
+    #[test]
+    fn session_fallback_prefers_the_newest_file() {
+        let dir = sessions_dir("newest", SESSION);
+        let older = day_dir(&dir).join("rollout-FAKE.jsonl");
+        let newer = day_dir(&dir).join("rollout-NEWER.jsonl");
+        std::fs::write(&newer, SESSION.replace("44.0", "61.0")).unwrap();
+        set_mtime(&older, SESSION_NOW - 120);
+        set_mtime(&newer, SESSION_NOW - 60);
+        let (u, _) = latest_session_limits(&dir, SESSION_NOW).unwrap();
+        assert_eq!(u.five_hour.unwrap().used_pct, 61.0);
+    }
+
+    #[test]
+    fn session_fallback_stops_after_max_files() {
+        let dir = sessions_dir("max-files", SESSION);
+        let day = day_dir(&dir);
+        set_mtime(&day.join("rollout-FAKE.jsonl"), SESSION_NOW - 3600);
+        for i in 0..SESSION_MAX_FILES {
+            let path = day.join(format!("rollout-EMPTY-{i}.jsonl"));
+            std::fs::write(&path, filler(1)).unwrap();
+            set_mtime(&path, SESSION_NOW - i as i64);
+        }
+        assert!(latest_session_limits(&dir, SESSION_NOW).is_none());
+
+        std::fs::remove_file(day.join("rollout-EMPTY-0.jsonl")).unwrap();
+        assert!(latest_session_limits(&dir, SESSION_NOW).is_some());
     }
 
     #[test]
