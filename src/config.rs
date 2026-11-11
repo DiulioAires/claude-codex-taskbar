@@ -69,11 +69,22 @@ impl Default for Config {
 
 impl Config {
     /// Missing or corrupt files yield the default config; this never fails.
+    /// Before falling back on parse errors, try to preserve the original bytes in `.bad`.
     pub fn load_from(path: &Path) -> Config {
-        std::fs::read_to_string(path)
+        std::fs::read(path)
             .ok()
-            .and_then(|text| {
-                serde_json::from_str::<Config>(text.trim_start_matches('\u{feff}')).ok()
+            .and_then(|bytes| {
+                let config = std::str::from_utf8(&bytes).ok().and_then(|text| {
+                    serde_json::from_str::<Config>(text.trim_start_matches('\u{feff}')).ok()
+                });
+                if config.is_none() {
+                    let mut backup = path.as_os_str().to_os_string();
+                    backup.push(".bad");
+                    // Use the bytes we parsed, even if another process changes the source.
+                    // A failed backup must not prevent startup (e.g. a read-only folder).
+                    let _ = std::fs::write(backup, bytes);
+                }
+                config
             })
             .unwrap_or_default()
             .clamped()
@@ -294,21 +305,62 @@ mod tests {
     #[test]
     fn config_corrupt_file_gives_default() {
         let path = temp_file("corrupt");
-        std::fs::write(&path, "{nope").unwrap();
+        let original = b"{nope\r\n";
+        std::fs::write(&path, original).unwrap();
+        let cfg = Config::load_from(&path);
+        assert_eq!(cfg, Config::default());
+        assert_eq!(
+            std::fs::read(path.with_extension("json.bad")).unwrap(),
+            original
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        cfg.save_to(&path).unwrap();
+        assert_eq!(
+            std::fs::read(path.with_extension("json.bad")).unwrap(),
+            original
+        );
+    }
+
+    #[test]
+    fn config_invalid_utf8_preserves_original_bytes() {
+        let path = temp_file("invalid-utf8");
+        let original = b"{\"claude_label\":\"\xff\"}";
+        std::fs::write(&path, original).unwrap();
         assert_eq!(Config::load_from(&path), Config::default());
+        assert_eq!(
+            std::fs::read(path.with_extension("json.bad")).unwrap(),
+            original
+        );
+    }
+
+    #[test]
+    fn config_corrupt_file_replaces_previous_backup() {
+        let path = temp_file("replace-bad");
+        let backup = path.with_extension("json.bad");
+        std::fs::write(&backup, "older broken config").unwrap();
+        std::fs::write(&path, "{new broken config").unwrap();
+        assert_eq!(Config::load_from(&path), Config::default());
+        assert_eq!(std::fs::read(&backup).unwrap(), b"{new broken config");
     }
 
     #[test]
     fn config_missing_file_gives_default() {
         let path = temp_file("missing").with_file_name("absent.json");
         assert_eq!(Config::load_from(&path), Config::default());
+        assert!(!path.exists());
+        assert!(!path.with_extension("json.bad").exists());
     }
 
     #[test]
     fn config_missing_fields_use_defaults() {
         let path = temp_file("partial");
-        std::fs::write(&path, r#"{"claude_enabled":true}"#).unwrap();
+        std::fs::write(
+            &path,
+            "\u{feff}{\"claude_enabled\":true,\"future_setting\":42}",
+        )
+        .unwrap();
         let cfg = Config::load_from(&path);
+        assert!(!path.with_extension("json.bad").exists());
         assert!(cfg.claude_enabled);
         assert_eq!(cfg.hw_interval_secs, 1);
         assert_eq!(cfg.limits_interval_secs, 120);

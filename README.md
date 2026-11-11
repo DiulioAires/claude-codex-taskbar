@@ -107,6 +107,7 @@ Build from source: `cargo build --release` (see [CONTRIBUTING.md](CONTRIBUTING.m
 - **Network access only to the providers' own usage endpoints**, and only for the providers you enable.
 - **Credentials stay on your PC.** Read-only, except the Claude login, which is written only when you pick an account to switch to (*Save current account* only reads it). Tokens are never logged, copied or sent anywhere except to their own provider.
 - Settings and saved accounts live locally in `%APPDATA%\claude-codex-taskbar\`.
+- If `config.json` cannot be parsed, CCT tries to preserve its original bytes in `config.json.bad` (replacing an older backup) before loading defaults. You can recover your settings from that copy; a missing file on first run creates no backup.
 
 ## Roadmap
 
