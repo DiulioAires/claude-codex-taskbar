@@ -32,7 +32,7 @@ Many developers have more than one AI coding subscription: a **personal** Claude
 CCT (`claude-codex-taskbar`) puts the answer where you already look: the taskbar.
 
 1. **Shows the active account's usage.** The 5-hour and weekly limits (% used, reset time) of the account currently logged in to Claude Code and to Codex. Limits belong to the account, not to the app, so the numbers reflect usage from the CLI, the desktop app and the web together.
-2. **Tells you which account is active.** A short label of your choice (`P` for personal, `W` for work, up to 5 characters) sits right before the Claude and the Codex gauges, in each service's color, and each saved Claude account has its own. The Claude account menu lists your saved accounts with their email, plan and last-seen usage, and marks the one in use.
+2. **Shows which account is active in the account menu.** Right-click the strip → **Claude account** to see saved accounts and the active account. The strip itself shows only provider logos and usage indicators.
 3. **Switches accounts in three clicks.** Right-click the strip → **Claude account** → pick one. No `/logout`, no `/login`, no restart: Claude Code uses the new login on its next request.
 
 Plus a CPU, RAM, GPU and per-disk monitor, so you see at a glance whether your PC is under load before you start a big task.
@@ -73,7 +73,7 @@ Each entry shows the plan and the usage last seen on that account. `⚠ login ex
 - **Claude Code limits**: 5-hour and weekly usage; hover for Opus/Sonnet weekly percentages, local reset times and an extra-usage notice.
 - **Codex limits**: 5-hour and weekly usage of the current `codex` login, with an offline fallback to the Codex CLI.
 - **Claude account switcher**: save paid logins, see which one is active, switch in three clicks.
-- **Account labels**: a short tag of your choice (default `P`) before the Claude and Codex gauges; each saved Claude account keeps its own, so the strip shows it after a switch. Edit it in Settings.
+- **Account identity**: saved account labels remain configurable, but letter badges are omitted from the strip. Use the Claude account menu to identify the active account.
 - **Provider logos and completion flashes**: Claude and Codex logos identify their gauges in normal and compact mode. An opt-in local `Stop` hook flashes the corresponding logo three times when the agent finishes responding, without taking focus or refreshing usage. See [setup and supported terminal/desktop sessions](docs/completion-hooks.md).
 - **Hardware**: CPU, RAM, GPU (busiest engine, like Task Manager) and per-disk active time.
 - **Quota alerts (opt-in)**: a Windows notification when Claude or Codex usage crosses 80% or 95% (configurable), skipped in full screen and quiet hours.
@@ -125,7 +125,7 @@ Not planned: its own login screen, usage history.
 Save each login once (**Claude account → Save current account**), then switch with three clicks: right-click the strip → **Claude account** → pick one. Both must be paid plans. Claude Code uses the new account from its next request, without a restart.
 
 ### How do I know which Claude Code account I am using right now?
-Look at the label before the Claude gauges (for example `P` or `W`, set in Settings for each saved account). For details, right-click the strip → **Claude account**: the active account is marked, with its email, plan and usage.
+Right-click the strip → **Claude account**: the active account is marked, with its email, plan and usage. The strip shows provider logos without account-letter badges.
 
 ### Is switching accounts allowed by Anthropic?
 CCT only automates what you would do by hand with `/logout` and `/login`, for accounts that are yours, and only when you click. It never switches automatically or rotates accounts to get around limits. Make sure your use follows each provider's terms.
@@ -158,3 +158,7 @@ Bug reports, design feedback, translations, docs and code are all welcome. Read 
 ## License
 
 [MIT](LICENSE) © Pablo Chiaro Rosa
+
+### Provider icon assets
+
+The Claude and Codex icon files come from the LobeHub **lobe-icons** collection under the **MIT License**. Their source links, copyright notice and complete MIT license are included in [res/provider-logos.md](res/provider-logos.md). The original SVGs are included in the repository; icons are embedded locally, with no runtime downloads.

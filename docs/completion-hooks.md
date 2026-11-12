@@ -1,7 +1,7 @@
 # Provider logos and completion flashes
 
 The strip identifies Claude and Codex with a logo before each provider's gauges, including
-compact mode. The 5-hour and weekly values and your custom account labels stay visible.
+compact mode. The 5-hour and weekly indicators remain; account-letter badges are not drawn on the strip.
 Hover for the full provider names and usage details.
 
 A local completion hook can flash the corresponding logo **three times over three seconds**.

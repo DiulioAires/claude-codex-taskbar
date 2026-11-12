@@ -46,11 +46,6 @@ pub const GAP: f32 = 10.0;
 pub const SEP_W: f32 = 1.0;
 const SEP_H: f32 = 30.0;
 const ELLIPSIS: &str = "…";
-/// Space between an account label and its gauge (#74).
-const BADGE_GAP: f32 = 5.0;
-/// Account label badge: horizontal padding and height, square corners.
-const BADGE_PAD: f32 = 4.0;
-const BADGE_H: f32 = 16.0;
 const LOGO_SIZE: f32 = 20.0;
 const LOGO_GAP: f32 = 5.0;
 const LOGO_INSET: f32 = 2.0;
@@ -322,25 +317,17 @@ impl Renderer {
             .map(|(i, item)| {
                 let value = self.text_width(&item.text(), &self.value_fmt).max(BAR_W);
                 let label = self.text_width(paint_label(item), &self.label_fmt);
-                let badge = self.badge_width(item)
-                    + if first_provider(items, i) {
-                        LOGO_WIDTH
-                    } else {
-                        0.0
-                    };
+                let badge = if first_provider(items, i) {
+                    LOGO_WIDTH
+                } else {
+                    0.0
+                };
                 ItemMetrics {
                     full_w: to_px(badge + value.max(label), dpi),
                     compact_w: to_px(badge + value, dpi),
                 }
             })
             .collect()
-    }
-
-    /// Width in DIPs an item's account label takes, gap included; 0 without a label.
-    fn badge_width(&self, item: &ItemView) -> f32 {
-        item.badge.as_deref().map_or(0.0, |b| {
-            self.text_width(b, &self.value_fmt).ceil() + 2.0 * BADGE_PAD + BADGE_GAP
-        })
     }
 
     pub fn ellipsis_px(&self, dpi: u32) -> i32 {
@@ -493,31 +480,6 @@ impl Renderer {
                     rt.SetTransform(&previous);
                     x += LOGO_WIDTH;
                     col_w -= LOGO_WIDTH;
-                }
-                // Account label: a square-cornered badge in the service color with white
-                // text, centered on the whole block (#74).
-                if let Some(badge) = item.badge.as_deref() {
-                    let bw = self.badge_width(item);
-                    let by = top + (block_h - BADGE_H) / 2.0;
-                    let r = D2D_RECT_F {
-                        left: x,
-                        top: by,
-                        right: x + bw - BADGE_GAP,
-                        bottom: by + BADGE_H,
-                    };
-                    set(bar_color(item.kind, Some(0.0)), 1.0);
-                    rt.FillRectangle(&r, brush);
-                    set(0xffffff, 1.0);
-                    rt.DrawText(
-                        &wide(badge),
-                        &self.value_fmt,
-                        &r,
-                        brush,
-                        D2D1_DRAW_TEXT_OPTIONS_NONE,
-                        DWRITE_MEASURING_MODE_NATURAL,
-                    );
-                    x += bw;
-                    col_w -= bw;
                 }
                 let mut y = top;
                 if layout.mode == Mode::Full {
@@ -723,6 +685,22 @@ mod tests {
                 Kind::Claude => "Claude",
                 _ => "Codex",
             }));
+        }
+    }
+
+    #[test]
+    fn account_letters_do_not_change_strip_pixels_or_width() {
+        let renderer = Renderer::new().unwrap();
+        for kind in [Kind::Claude, Kind::Codex] {
+            let plain = provider_item(kind, false);
+            let mut labeled = plain.clone();
+            labeled.badge = Some("Work".into());
+            for mode in [Mode::Full, Mode::Compact] {
+                assert_eq!(
+                    render_mode_pixels(&renderer, std::slice::from_ref(&plain), 96, false, mode),
+                    render_mode_pixels(&renderer, std::slice::from_ref(&labeled), 96, false, mode)
+                );
+            }
         }
     }
 

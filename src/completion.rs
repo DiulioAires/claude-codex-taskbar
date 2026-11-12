@@ -8,7 +8,7 @@ use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW, WM_APP}
 use windows::core::w;
 
 /// Carries only a provider number, never a pointer or conversation data.
-pub const WM_TASK_COMPLETE: u32 = WM_APP + 6;
+pub const WM_TASK_COMPLETE: u32 = WM_APP + 7;
 pub const TIMER_INTERVAL_MS: u32 = 250;
 const PULSE_DURATION: Duration = Duration::from_secs(3);
 
