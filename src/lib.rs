@@ -1,6 +1,7 @@
 //! Core library for CCT (claude-codex-taskbar). Pure logic lives here so it can be unit-tested.
 
 pub mod autostart;
+pub mod completion;
 pub mod config;
 pub mod hw;
 pub mod i18n;

@@ -9,6 +9,7 @@ use super::taskbar::{
     self, IconCache, TaskbarInfo, available_width, hides_for_fullscreen, is_fullscreen,
 };
 use super::view::{ItemView, TaskbarHints, build_items, tooltip_text};
+use crate::completion::Pulses;
 use crate::config::{self, Config};
 use crate::hw::{HwSnapshot, Sampler};
 use crate::i18n::{Key, fmt, t};
@@ -26,6 +27,7 @@ use crate::timeutil::now_unix;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
+use std::time::Instant;
 use windows::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
@@ -59,6 +61,7 @@ pub struct App {
     items: Vec<ItemView>,
     layout: Option<Layout>,
     frame: FrameCache,
+    completions: Pulses,
     light: bool,
     pub shown: bool,
     inbox: Option<Receiver<LimitResult>>,
@@ -145,6 +148,7 @@ impl App {
             items: Vec::new(),
             layout: None,
             frame: FrameCache::default(),
+            completions: Pulses::default(),
             light: light_theme(),
             shown: false,
             inbox: None,
@@ -186,6 +190,23 @@ impl App {
         if wake {
             self.control.wake();
         }
+    }
+
+    /// Completion hooks are independent of usage fetching and never consume quota.
+    pub fn task_completed(&mut self, kind: Kind) -> bool {
+        let enabled = match kind {
+            Kind::Claude => self.cfg.claude_enabled,
+            Kind::Codex => self.cfg.codex_enabled,
+            Kind::Hardware => false,
+        };
+        if enabled {
+            self.completions.trigger(kind, Instant::now());
+        }
+        enabled
+    }
+
+    pub fn completion_active(&self) -> bool {
+        self.completions.active(Instant::now())
     }
 
     pub fn sample_hw(&mut self) {
@@ -347,6 +368,10 @@ impl App {
             self.lang,
             now,
         );
+        let pulse_now = Instant::now();
+        for item in &mut self.items {
+            item.completion_flash = self.completions.lit(item.kind, pulse_now);
+        }
         let margin = to_px(MARGIN_DIP, dpi);
         let key = FrameKey {
             items: self.items.clone(),

@@ -1,5 +1,6 @@
 #![windows_subsystem = "windows"]
 
+use claude_codex_taskbar::completion::{self, Command};
 use claude_codex_taskbar::ui::strip::WM_APP_OPEN_SETTINGS;
 use windows::Win32::Foundation::{
     CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, LPARAM, WAIT_OBJECT_0, WPARAM,
@@ -33,6 +34,17 @@ unsafe fn close_legacy_instance() {
 }
 
 fn main() {
+    // Hook invocations must never initialize the app, read logins, or open Settings.
+    match completion::parse_command(&std::env::args_os().skip(1).collect::<Vec<_>>()) {
+        Command::Notify(kind) => {
+            completion::notify_running(kind);
+            // Both providers accept an empty JSON object from a successful Stop hook.
+            println!("{{}}");
+            return;
+        }
+        Command::Invalid => std::process::exit(1),
+        Command::Launch => {}
+    }
     // SAFETY: the mutex handle lives until process exit.
     unsafe {
         let _mutex = CreateMutexW(None, true, w!("Local\\claude-codex-taskbar"));

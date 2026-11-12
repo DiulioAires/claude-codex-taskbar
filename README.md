@@ -74,6 +74,7 @@ Each entry shows the plan and the usage last seen on that account. `⚠ login ex
 - **Codex limits**: 5-hour and weekly usage of the current `codex` login, with an offline fallback to the Codex CLI.
 - **Claude account switcher**: save paid logins, see which one is active, switch in three clicks.
 - **Account labels**: a short tag of your choice (default `P`) before the Claude and Codex gauges; each saved Claude account keeps its own, so the strip shows it after a switch. Edit it in Settings.
+- **Provider logos and completion flashes**: Claude and Codex logos identify their gauges in normal and compact mode. An opt-in local `Stop` hook flashes the corresponding logo three times when the agent finishes responding, without taking focus or refreshing usage. See [setup and supported terminal/desktop sessions](docs/completion-hooks.md).
 - **Hardware**: CPU, RAM, GPU (busiest engine, like Task Manager) and per-disk active time.
 - **Quota alerts (opt-in)**: a Windows notification when Claude or Codex usage crosses 80% or 95% (configurable), skipped in full screen and quiet hours.
 - **Honest numbers**: an expired login or a broken endpoint shows `—` and the reason, never a fake `0%`.

@@ -36,6 +36,7 @@ const TIMER_TOPMOST: usize = 2;
 const TIMER_DISKS: usize = 3;
 /// One-shot: refresh limits right after a known reset.
 const TIMER_RESET: usize = 4;
+const TIMER_COMPLETION: usize = 5;
 const TOPMOST_MS: u32 = 2000;
 const DISKS_MS: u32 = 30_000;
 
@@ -285,6 +286,12 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     }
                     with_app(|app| app.control.wake());
                 }
+                TIMER_COMPLETION if !with_app(|app| app.completion_active()).unwrap_or(false) => {
+                    // SAFETY: the timer belongs to this window and has finished its pulses.
+                    unsafe {
+                        let _ = KillTimer(Some(hwnd), TIMER_COMPLETION);
+                    }
+                }
                 _ => {}
             }
             render(hwnd);
@@ -304,6 +311,24 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
         }
         WM_APP_OPEN_SETTINGS => {
             super::settings::open(hwnd);
+            LRESULT(0)
+        }
+        crate::completion::WM_TASK_COMPLETE => {
+            if lparam.0 == 0
+                && let Some(kind) = crate::completion::message_provider(wparam.0)
+                && with_app(|app| app.task_completed(kind)).unwrap_or(false)
+            {
+                // SAFETY: a short-lived timer on the strip; no activation or worker wake.
+                unsafe {
+                    SetTimer(
+                        Some(hwnd),
+                        TIMER_COMPLETION,
+                        crate::completion::TIMER_INTERVAL_MS,
+                        None,
+                    );
+                }
+                render(hwnd);
+            }
             LRESULT(0)
         }
         super::switcher_ui::WM_APP_SWITCHED => {
@@ -371,7 +396,13 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             with_app(|app| app.control.stop());
             // SAFETY: timers belong to this window.
             unsafe {
-                for id in [TIMER_HW, TIMER_TOPMOST, TIMER_DISKS, TIMER_RESET] {
+                for id in [
+                    TIMER_HW,
+                    TIMER_TOPMOST,
+                    TIMER_DISKS,
+                    TIMER_RESET,
+                    TIMER_COMPLETION,
+                ] {
                     let _ = KillTimer(Some(hwnd), id);
                 }
                 PostQuitMessage(0);
@@ -569,6 +600,7 @@ mod tests {
             WM_APP_LIMITS,
             WM_APP_REASSERT,
             WM_APP_OPEN_SETTINGS,
+            crate::completion::WM_TASK_COMPLETE,
             notifications::CALLBACK,
             super::super::switcher_ui::WM_APP_SWITCHED,
         ];
