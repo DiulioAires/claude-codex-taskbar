@@ -20,6 +20,8 @@ pub struct ItemView {
     pub value: Option<f32>,
     /// Data is old (stale or from session logs): bar drawn at half opacity.
     pub dim: bool,
+    /// Transient completion pulse; only the provider logo changes.
+    pub completion_flash: bool,
     /// Text only: bar geometry and colors still use `value`.
     pub show_remaining: bool,
     /// Account label drawn before this item, in the provider's color (#74). Set on the
@@ -102,6 +104,7 @@ pub fn build_items(
                 label,
                 value,
                 dim,
+                completion_flash: false,
                 show_remaining: cfg.show_remaining,
                 badge: None,
                 tick,
@@ -608,6 +611,7 @@ mod tests {
         );
         let labels: Vec<_> = items.iter().map(|i| i.label.as_str()).collect();
         assert_eq!(labels, ["CPU", "RAM", "GPU", "C:", "Claude 5h", "sem"]);
+        assert!(items.iter().all(|item| !item.completion_flash));
         assert_eq!(items[0].kind, Kind::Hardware);
         assert_eq!(items[4].value, Some(62.0));
         assert_eq!(items[5].value, Some(34.0));
@@ -728,6 +732,7 @@ mod tests {
             label: "GPU".into(),
             value: Some(12.0),
             dim: false,
+            completion_flash: false,
             show_remaining: false,
             badge: None,
             tick: None,

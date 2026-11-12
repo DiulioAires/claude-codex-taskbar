@@ -2,16 +2,19 @@
 
 use super::layout::{ItemMetrics, Layout, Mode};
 use super::view::ItemView;
-use crate::model::bar_color;
+use crate::model::{Kind, bar_color};
+
+mod logo_paths;
 use windows::Win32::Foundation::{COLORREF, HWND, POINT, RECT, SIZE};
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D_RECT_F, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT,
+    D2D_RECT_F, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
+    D2D1_FIGURE_END_CLOSED, D2D1_FILL_MODE_ALTERNATE, D2D1_PIXEL_FORMAT,
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
     D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1_RENDER_TARGET_USAGE_NONE,
     D2D1_ROUNDED_RECT, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1DCRenderTarget,
-    ID2D1Factory, ID2D1SolidColorBrush,
+    ID2D1Factory, ID2D1PathGeometry, ID2D1SolidColorBrush,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
@@ -48,6 +51,10 @@ const BADGE_GAP: f32 = 5.0;
 /// Account label badge: horizontal padding and height, square corners.
 const BADGE_PAD: f32 = 4.0;
 const BADGE_H: f32 = 16.0;
+const LOGO_SIZE: f32 = 20.0;
+const LOGO_GAP: f32 = 5.0;
+const LOGO_INSET: f32 = 2.0;
+const LOGO_WIDTH: f32 = LOGO_SIZE + 2.0 * LOGO_INSET + LOGO_GAP;
 
 struct Palette {
     label: u32,
@@ -202,6 +209,8 @@ pub struct Renderer {
     label_fmt: IDWriteTextFormat,
     value_fmt: IDWriteTextFormat,
     surface: Option<Surface>,
+    claude_logo: ID2D1PathGeometry,
+    codex_logo: ID2D1PathGeometry,
 }
 
 fn text_format(
@@ -229,6 +238,46 @@ fn text_format(
     Ok(f)
 }
 
+/// Keep the original label for tooltips and clipboard; shorten only the painted row.
+fn paint_label(item: &ItemView) -> &str {
+    if item.kind == Kind::Hardware {
+        &item.label
+    } else {
+        item.label
+            .strip_prefix("Claude ")
+            .or_else(|| item.label.strip_prefix("Codex "))
+            .unwrap_or(&item.label)
+    }
+}
+
+fn first_provider(items: &[ItemView], index: usize) -> bool {
+    items[index].kind != Kind::Hardware
+        && !items[..index]
+            .iter()
+            .any(|item| item.kind == items[index].kind)
+}
+
+fn logo_geometry(factory: &ID2D1Factory, contours: &[&[[f32; 2]]]) -> Result<ID2D1PathGeometry> {
+    // SAFETY: owned COM geometry and sink; the point conversion preserves the documented
+    // two-f32 Vector2 ABI used by Direct2D. Contours are embedded, closed and nonempty.
+    unsafe {
+        let geometry = factory.CreatePathGeometry()?;
+        let sink = geometry.Open()?;
+        sink.SetFillMode(D2D1_FILL_MODE_ALTERNATE);
+        for contour in contours {
+            let points: Vec<_> = contour
+                .iter()
+                .map(|&point| std::mem::transmute::<[f32; 2], _>(point))
+                .collect();
+            sink.BeginFigure(points[0], D2D1_FIGURE_BEGIN_FILLED);
+            sink.AddLines(&points[1..]);
+            sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+        }
+        sink.Close()?;
+        Ok(geometry)
+    }
+}
+
 impl Renderer {
     pub fn new() -> Result<Renderer> {
         // SAFETY: factory creation has no preconditions.
@@ -237,12 +286,16 @@ impl Renderer {
         let dwrite: IDWriteFactory = unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)? };
         let label_fmt = text_format(&dwrite, LABEL_SIZE, DWRITE_FONT_WEIGHT_NORMAL)?;
         let value_fmt = text_format(&dwrite, VALUE_SIZE, DWRITE_FONT_WEIGHT_SEMI_BOLD)?;
+        let claude_logo = logo_geometry(&d2d, logo_paths::CLAUDE)?;
+        let codex_logo = logo_geometry(&d2d, logo_paths::CODEX)?;
         Ok(Renderer {
             d2d,
             dwrite,
             label_fmt,
             value_fmt,
             surface: None,
+            claude_logo,
+            codex_logo,
         })
     }
 
@@ -265,10 +318,16 @@ impl Renderer {
     pub fn measure(&self, items: &[ItemView], dpi: u32) -> Vec<ItemMetrics> {
         items
             .iter()
-            .map(|item| {
+            .enumerate()
+            .map(|(i, item)| {
                 let value = self.text_width(&item.text(), &self.value_fmt).max(BAR_W);
-                let label = self.text_width(&item.label, &self.label_fmt);
-                let badge = self.badge_width(item);
+                let label = self.text_width(paint_label(item), &self.label_fmt);
+                let badge = self.badge_width(item)
+                    + if first_provider(items, i) {
+                        LOGO_WIDTH
+                    } else {
+                        0.0
+                    };
                 ItemMetrics {
                     full_w: to_px(badge + value.max(label), dpi),
                     compact_w: to_px(badge + value, dpi),
@@ -384,6 +443,57 @@ impl Renderer {
                     },
                     dpi,
                 );
+                if !layout.visible[..n]
+                    .iter()
+                    .any(|&previous| items[previous].kind == item.kind)
+                    && item.kind != Kind::Hardware
+                {
+                    let logo_y = top + (block_h - LOGO_SIZE) / 2.0;
+                    if item.completion_flash {
+                        set(palette.value, 1.0);
+                        rt.FillRoundedRectangle(
+                            &D2D1_ROUNDED_RECT {
+                                rect: D2D_RECT_F {
+                                    left: x,
+                                    top: logo_y - LOGO_INSET,
+                                    right: x + LOGO_SIZE + 2.0 * LOGO_INSET,
+                                    bottom: logo_y + LOGO_SIZE + LOGO_INSET,
+                                },
+                                radiusX: 4.0,
+                                radiusY: 4.0,
+                            },
+                            brush,
+                        );
+                    }
+                    set(
+                        if item.completion_flash {
+                            if light { 0xffffff } else { 0x202020 }
+                        } else {
+                            palette.value
+                        },
+                        1.0,
+                    );
+                    let mut previous = Default::default();
+                    rt.GetTransform(&mut previous);
+                    let mut transform = previous;
+                    transform.M11 = LOGO_SIZE / 24.0;
+                    transform.M22 = LOGO_SIZE / 24.0;
+                    transform.M31 = x + LOGO_INSET;
+                    transform.M32 = logo_y;
+                    rt.SetTransform(&transform);
+                    rt.FillGeometry(
+                        if item.kind == Kind::Claude {
+                            &self.claude_logo
+                        } else {
+                            &self.codex_logo
+                        },
+                        brush,
+                        None,
+                    );
+                    rt.SetTransform(&previous);
+                    x += LOGO_WIDTH;
+                    col_w -= LOGO_WIDTH;
+                }
                 // Account label: a square-cornered badge in the service color with white
                 // text, centered on the whole block (#74).
                 if let Some(badge) = item.badge.as_deref() {
@@ -419,7 +529,7 @@ impl Renderer {
                         bottom: y + LABEL_LINE,
                     };
                     rt.DrawText(
-                        &wide(&item.label),
+                        &wide(paint_label(item)),
                         &self.label_fmt,
                         &r,
                         brush,
@@ -531,15 +641,35 @@ mod tests {
         dpi: u32,
         light: bool,
     ) -> (i32, i32, Vec<u32>) {
+        render_mode_pixels(renderer, items, dpi, light, Mode::Full)
+    }
+
+    fn render_mode_pixels(
+        renderer: &Renderer,
+        items: &[ItemView],
+        dpi: u32,
+        light: bool,
+        mode: Mode,
+    ) -> (i32, i32, Vec<u32>) {
         let metrics = renderer.measure(items, dpi);
         let kinds: Vec<_> = items.iter().map(|i| i.kind).zip(metrics.clone()).collect();
-        let l = layout(
+        let mut l = layout(
             &kinds,
             4000,
             to_px(GAP, dpi),
             to_px(SEP_W, dpi),
             renderer.ellipsis_px(dpi),
         );
+        l.mode = mode;
+        if mode == Mode::Compact {
+            l.width = metrics.iter().map(|m| m.compact_w).sum::<i32>()
+                + to_px(GAP, dpi) * (items.len() as i32 - 1).max(0)
+                + if l.separator_after.is_some() {
+                    to_px(SEP_W + GAP, dpi)
+                } else {
+                    0
+                };
+        }
         let (w, h) = (l.width.max(1), to_px(48.0, dpi));
         let surface = Surface::new(&renderer.d2d, w, h, dpi).expect("surface");
         unsafe {
@@ -548,6 +678,182 @@ mod tests {
                 .expect("draw");
             let px = std::slice::from_raw_parts(surface.bits, (w * h) as usize).to_vec();
             (w, h, px)
+        }
+    }
+
+    fn provider_item(kind: Kind, weekly: bool) -> ItemView {
+        ItemView {
+            id: match (kind, weekly) {
+                (Kind::Claude, false) => ItemId::ClaudeFive,
+                (Kind::Claude, true) => ItemId::ClaudeWeek,
+                (Kind::Codex, false) => ItemId::CodexFive,
+                _ => ItemId::CodexWeek,
+            },
+            kind,
+            label: if weekly {
+                "wk".into()
+            } else {
+                format!("{kind:?} 5h")
+            },
+            value: Some(36.0),
+            dim: false,
+            completion_flash: false,
+            show_remaining: false,
+            badge: None,
+            tick: None,
+        }
+    }
+
+    #[test]
+    fn provider_names_are_replaced_by_one_logo_before_the_first_visible_period() {
+        let renderer = Renderer::new().expect("renderer");
+        for kind in [Kind::Claude, Kind::Codex] {
+            let five = provider_item(kind, false);
+            let week = provider_item(kind, true);
+            for dpi in [96, 144] {
+                let together = renderer.measure(&[five.clone(), week.clone()], dpi);
+                let weekly_only = renderer.measure(std::slice::from_ref(&week), dpi);
+                for compact in [false, true] {
+                    let width = |m: ItemMetrics| if compact { m.compact_w } else { m.full_w };
+                    assert_eq!(width(together[0]), width(weekly_only[0]));
+                    assert!(width(together[0]) > width(together[1]));
+                }
+            }
+            assert!(five.label.contains(match kind {
+                Kind::Claude => "Claude",
+                _ => "Codex",
+            }));
+        }
+    }
+
+    #[test]
+    fn completion_flash_changes_only_logo_pixels_in_both_modes() {
+        let renderer = Renderer::new().expect("renderer");
+        for kind in [Kind::Claude, Kind::Codex] {
+            let mut base = provider_item(kind, false);
+            base.badge = Some("P".into());
+            let mut flashing = base.clone();
+            flashing.completion_flash = true;
+            for dpi in [96, 144] {
+                for light in [false, true] {
+                    for mode in [Mode::Full, Mode::Compact] {
+                        let (w, _, before) = render_mode_pixels(
+                            &renderer,
+                            std::slice::from_ref(&base),
+                            dpi,
+                            light,
+                            mode,
+                        );
+                        let (_, _, after) =
+                            render_mode_pixels(&renderer, &[flashing.clone()], dpi, light, mode);
+                        let changed: Vec<_> = before
+                            .iter()
+                            .zip(&after)
+                            .enumerate()
+                            .filter(|(_, (a, b))| a != b)
+                            .map(|(i, _)| i)
+                            .collect();
+                        assert!(!changed.is_empty(), "{kind:?} {mode:?} {dpi} light={light}");
+                        assert!(
+                            changed
+                                .iter()
+                                .all(|i| (i % w as usize) < to_px(24.0, dpi) as usize)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn each_logo_has_distinct_pixels_and_a_provider_has_no_second_logo() {
+        let renderer = Renderer::new().expect("renderer");
+        for dpi in [96, 144] {
+            for light in [false, true] {
+                for mode in [Mode::Full, Mode::Compact] {
+                    let claude = provider_item(Kind::Claude, false);
+                    let codex = provider_item(Kind::Codex, false);
+                    let (_, _, a) = render_mode_pixels(
+                        &renderer,
+                        std::slice::from_ref(&claude),
+                        dpi,
+                        light,
+                        mode,
+                    );
+                    let (_, _, b) = render_mode_pixels(&renderer, &[codex], dpi, light, mode);
+                    assert!(a.iter().zip(b).filter(|(a, b)| **a != *b).count() > 30);
+                    let mut week = provider_item(Kind::Claude, true);
+                    let (_, _, normal) = render_mode_pixels(
+                        &renderer,
+                        &[claude.clone(), week.clone()],
+                        dpi,
+                        light,
+                        mode,
+                    );
+                    week.completion_flash = true;
+                    let (_, _, no_second_logo) =
+                        render_mode_pixels(&renderer, &[claude, week], dpi, light, mode);
+                    assert_eq!(normal, no_second_logo);
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "exports only offscreen synthetic provider previews to CCT_PREVIEW_DIR"]
+    fn export_provider_previews() {
+        let dir =
+            std::path::PathBuf::from(std::env::var_os("CCT_PREVIEW_DIR").expect("CCT_PREVIEW_DIR"));
+        std::fs::create_dir_all(&dir).expect("preview directory");
+        let renderer = Renderer::new().expect("renderer");
+        let mut items = vec![
+            provider_item(Kind::Claude, false),
+            provider_item(Kind::Claude, true),
+            provider_item(Kind::Codex, false),
+            provider_item(Kind::Codex, true),
+        ];
+        items[0].badge = Some("P".into());
+        items[2].badge = Some("W".into());
+        for dpi in [96, 144] {
+            for light in [false, true] {
+                for mode in [Mode::Full, Mode::Compact] {
+                    for flash in [false, true] {
+                        items[0].completion_flash = flash;
+                        items[2].completion_flash = flash;
+                        let (w, h, px) = render_mode_pixels(&renderer, &items, dpi, light, mode);
+                        let size = 54 + w * h * 4;
+                        let mut bmp = Vec::with_capacity(size as usize);
+                        bmp.extend_from_slice(b"BM");
+                        bmp.extend_from_slice(&(size as u32).to_le_bytes());
+                        bmp.extend_from_slice(&[0; 4]);
+                        bmp.extend_from_slice(&54u32.to_le_bytes());
+                        bmp.extend_from_slice(&40u32.to_le_bytes());
+                        bmp.extend_from_slice(&w.to_le_bytes());
+                        bmp.extend_from_slice(&(-h).to_le_bytes());
+                        bmp.extend_from_slice(&1u16.to_le_bytes());
+                        bmp.extend_from_slice(&32u16.to_le_bytes());
+                        bmp.extend_from_slice(&[0; 24]);
+                        for pixel in px {
+                            // Composite premultiplied D2D pixels onto a taskbar-like background.
+                            let bg = if light { 0xf3u32 } else { 0x20u32 };
+                            let alpha = pixel >> 24;
+                            let channel = |shift: u32| -> u32 {
+                                ((pixel >> shift) & 255) + bg * (255 - alpha) / 255
+                            };
+                            let rgb =
+                                0xff00_0000u32 | channel(16) << 16 | channel(8) << 8 | channel(0);
+                            bmp.extend_from_slice(&rgb.to_le_bytes());
+                        }
+                        let filename = format!(
+                            "provider-{}-{:?}-{dpi}-{}.bmp",
+                            if light { "light" } else { "dark" },
+                            mode,
+                            if flash { "flash" } else { "normal" }
+                        );
+                        std::fs::write(dir.join(filename), bmp).expect("preview bitmap");
+                    }
+                }
+            }
         }
     }
 
@@ -562,6 +868,7 @@ mod tests {
             value: Some(36.0),
             tick: None,
             dim: false,
+            completion_flash: false,
             show_remaining: false,
         };
         let mut with_tick = base.clone();

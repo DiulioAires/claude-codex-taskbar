@@ -49,6 +49,7 @@ mod tests {
                 label: "CPU".into(),
                 value: Some(cpu),
                 dim: false,
+                completion_flash: false,
                 show_remaining: false,
                 badge: None,
                 tick: None,
@@ -97,6 +98,18 @@ mod tests {
         ] {
             assert!(!cache.is_current(&changed), "{changed:?}");
         }
+    }
+
+    #[test]
+    fn completion_flash_invalidates_the_cached_frame() {
+        let mut cache = FrameCache::default();
+        let normal = key(10.0);
+        cache.painted(normal.clone());
+        let mut flashing = normal.clone();
+        flashing.items[0].completion_flash = true;
+        assert!(!cache.is_current(&flashing));
+        cache.painted(flashing);
+        assert!(!cache.is_current(&normal));
     }
 
     #[test]
